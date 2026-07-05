@@ -8,17 +8,26 @@ step, no dependencies, no backend.
 
 ## Controls
 
-**Touch (mobile):** left cluster = DODGE + BLOCK (hold). Right cluster = JAB /
-CROSS / HOOK / UPPER. When you're knocked down, mash the TAP button to beat
-the count.
+**Touch (mobile):** left cluster = ◀ ▶ move (hold), DODGE, DUCK (hold),
+BLOCK ▲ high guard (hold), BLOCK ▼ low guard (hold). Right cluster = JAB /
+CROSS / HOOK / UPPER / BODY. When you're knocked down, mash the TAP button to
+beat the count — later knockdowns need more mashing.
 
-**Keyboard:** `J` jab · `K` cross · `L` hook · `I` uppercut · `S`/`Space`
-block (hold) · `A`/`D` dodge · mash `Space` to get up.
+**Keyboard:** `A`/`D` move · `W` dodge · `S`/`Space` high block · `X` low
+block · `C` duck (all guards are hold) · `J` jab · `K` cross · `L` hook ·
+`I` uppercut · `M` body · mash `Space` to get up.
 
-**Tips:** dodging a punch opens a counter window — your next punch does 1.5×.
-Blocking still chips you and drains your stamina. Watch your stamina (blue
-bar): gassed punches hit like pillows. Hooks and uppercuts can score flash
-knockdowns when the opponent is hurt.
+**Tips:** watch the opponent's glove — a pulsing yellow ring means a punch is
+coming; guard or dodge it. **High guard stops head shots but leaks body
+shots; low guard is the reverse — read the punch and match the guard.**
+Ducking covers both but burns stamina while held, and an uppercut smashes
+straight through it. The same applies to the opponent: watch their guard
+height and hit what's open. Inputs pressed while you're mid-punch are buffered
+and fire the instant you're free. Dodging opens a counter window: your next
+punch does 1.5×. Mind your range — jabs reach farthest, uppercuts and body
+shots need to be close. Body shots steal stamina. Gassed punches hit like
+pillows. The roster is ordered weakest to strongest — start at the top of the
+list if you're getting hurt.
 
 ## Run locally
 

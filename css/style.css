@@ -235,11 +235,17 @@ html, body {
   touch-action: none;
 }
 .cluster { display: flex; gap: 8px; }
+.cluster.movedef {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
 .cluster.punches {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+.ctl.body { grid-column: 1 / -1; min-height: clamp(36px, 8vw, 48px); }
 .ctl {
   border: none;
   border-radius: 14px;
@@ -256,9 +262,13 @@ html, body {
 }
 .ctl:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); }
 .ctl.punch { background: linear-gradient(180deg, #d84545, #a82f2f); }
+.ctl.body { background: linear-gradient(180deg, #c8722e, #9a5520); }
 .ctl.defense { background: linear-gradient(180deg, #3a6ea8, #2a5080); }
-.ctl.block { min-width: clamp(70px, 20vw, 110px); }
-.ctl.block.held { background: linear-gradient(180deg, #4d8fd6, #3a6ea8); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
+.ctl.move { background: linear-gradient(180deg, #4a5568, #333d4d); font-size: clamp(15px, 4vw, 20px); }
+.ctl.move.held { background: linear-gradient(180deg, #5d6b82, #4a5568); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
+.ctl.defense.held { background: linear-gradient(180deg, #4d8fd6, #3a6ea8); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
+.ctl.duck { background: linear-gradient(180deg, #6b5a9e, #4d4076); }
+.ctl.duck.held { background: linear-gradient(180deg, #8574b8, #6b5a9e); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
 
 #key-hint {
   text-align: center;

@@ -100,7 +100,7 @@ class Renderer {
     this.drawRing(ctx);
 
     if (game) {
-      const px = 362, ox = 538;
+      const px = game.p.x, ox = game.o.x;
       // Draw the currently-attacking fighter on top
       const pActive = game.p.state === 'punch';
       if (pActive) {
@@ -255,9 +255,11 @@ class Renderer {
       ctx.translate(-pivotX, -pivotY);
     }
 
-    const hipY = 372 + bob * 0.4 + slump * 0.5;
-    const shoY = 288 + bob + slump;
-    const headY = 246 + bob + slump + headDy;
+    // Ducking: whole upper body sinks into a crouch
+    const duck = f.state === 'block' && f.guardZone === 'duck' ? 1 : 0;
+    const hipY = 372 + bob * 0.4 + slump * 0.5 + duck * 8;
+    const shoY = 288 + bob + slump + duck * 20;
+    const headY = 246 + bob + slump + headDy + duck * 28;
     const headX = x + dir * 8 + lean;
     const shoX = x + lean * 0.7;
 
@@ -400,8 +402,19 @@ class Renderer {
     let lead = { x: x + dir * 34, y: 258 + guardDroop };
     let rear = { x: x + dir * 20, y: 268 + guardDroop };
     if (blocking) {
-      lead = { x: headX + dir * 12, y: headY + 2 };
-      rear = { x: headX + dir * 2, y: headY + 10 };
+      const zone = f.guardZone || 'high';
+      if (zone === 'low') {
+        // Elbows down, gloves protecting the midsection
+        lead = { x: x + dir * 30, y: 322 };
+        rear = { x: x + dir * 16, y: 330 };
+      } else if (zone === 'duck') {
+        // Crouched full cover: gloves tight around the face
+        lead = { x: headX + dir * 10, y: headY - 4 };
+        rear = { x: headX - dir * 4, y: headY + 6 };
+      } else {
+        lead = { x: headX + dir * 12, y: headY + 2 };
+        rear = { x: headX + dir * 2, y: headY + 10 };
+      }
     } else if (victory) {
       lead = { x: x + dir * 10, y: 175 + Math.sin(this.t * 6) * 5 };
       rear = { x: x - dir * 26, y: 255 };
@@ -411,12 +424,16 @@ class Renderer {
     }
 
     // Punch extension overrides one arm
+    let telegraph = null;
     if (f.state === 'punch' && f.punch) {
       const ext = this.punchExt(f);
       const type = f.punch.type;
-      const arm = f.punch.def.arm; // 'lead' | 'rear'
-      const targetX = oppX - dir * 26;
-      let targetY = 246;
+      const pdef = f.punch.def;
+      const arm = pdef.arm; // 'lead' | 'rear'
+      // Cap extension at the punch's reach so whiffs visibly fall short
+      const maxX = x + dir * (pdef.reach - 30);
+      const targetX = dir > 0 ? Math.min(oppX - dir * 26, maxX) : Math.max(oppX - dir * 26, maxX);
+      let targetY = pdef.target === 'body' ? 322 : 246;
       let fromY = arm === 'lead' ? lead.y : rear.y;
       let fromX = arm === 'lead' ? lead.x : rear.x;
       if (type === 'uppercut') { fromY = shoY + 60; targetY = 238; }
@@ -426,6 +443,8 @@ class Renderer {
       if (type === 'hook' && ext > 0) gy -= Math.sin(ext * Math.PI) * 28; // arc over the top
       const g = { x: gx, y: gy };
       if (arm === 'lead') lead = g; else rear = g;
+      // AI windup cue: pulsing ring on the chambering glove — this is your chance to react
+      if (f.isAI && ext < 0) telegraph = g;
     }
 
     const drawArm = (glove, shoulderOffset) => {
@@ -455,5 +474,14 @@ class Renderer {
     // Rear arm behind, lead arm in front
     drawArm(rear, -14);
     drawArm(lead, 16);
+
+    if (telegraph) {
+      const pulse = 17 + Math.sin(this.t * 22) * 3;
+      ctx.strokeStyle = 'rgba(255, 210, 80, 0.85)';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(telegraph.x, telegraph.y, pulse, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 }

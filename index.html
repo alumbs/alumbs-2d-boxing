@@ -73,18 +73,23 @@
     </div>
 
     <div id="controls">
-      <div class="cluster">
+      <div class="cluster movedef">
+        <button id="btn-back" class="ctl move">◀</button>
+        <button id="btn-fwd" class="ctl move">▶</button>
         <button id="btn-dodge" class="ctl defense">DODGE</button>
-        <button id="btn-block" class="ctl defense block">BLOCK</button>
+        <button id="btn-duck" class="ctl defense duck">DUCK</button>
+        <button id="btn-guard-high" class="ctl defense">BLOCK ▲</button>
+        <button id="btn-guard-low" class="ctl defense">BLOCK ▼</button>
       </div>
       <div class="cluster punches">
         <button class="ctl punch" data-punch="jab">JAB</button>
         <button class="ctl punch" data-punch="cross">CROSS</button>
         <button class="ctl punch" data-punch="hook">HOOK</button>
         <button class="ctl punch" data-punch="uppercut">UPPER</button>
+        <button class="ctl punch body" data-punch="body">BODY</button>
       </div>
     </div>
-    <div id="key-hint" class="hidden">⌨ J jab · K cross · L hook · I uppercut · S / Space block (hold) · A / D dodge · mash Space to get up</div>
+    <div id="key-hint" class="hidden">⌨ A/D move · W dodge · S/Space high block · X low block · C duck (hold) · J jab · K cross · L hook · I uppercut · M body · mash Space to get up</div>
   </div>
 
   <script src="js/fighters.js"></script>

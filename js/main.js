@@ -118,17 +118,21 @@
         break;
       case 'hit': {
         const a = anchor(e.target);
+        const spot = e.body ? a.chest : a.head;
         audio.thud(e.dmg * 2.2);
-        renderer.addImpact(a.head.x, a.head.y, Math.min(16, 4 + e.dmg * 2));
-        if (e.counter) renderer.addFloat(a.head.x, a.head.y - 40, 'COUNTER!', '#ffe14d', 26);
+        renderer.addImpact(spot.x, spot.y, Math.min(16, 4 + e.dmg * 2), e.body ? '#ff9a5c' : '#ffd27a');
+        if (e.smash) renderer.addFloat(a.head.x, a.head.y - 40, 'SMASHED!', '#ff4d4d', 26);
+        else if (e.counter) renderer.addFloat(a.head.x, a.head.y - 40, 'COUNTER!', '#ffe14d', 26);
         else if (e.dmg >= 5) renderer.addFloat(a.head.x, a.head.y - 40, 'BIG SHOT!', '#ff7a4d', 22);
+        else if (e.body && e.dmg >= 3) renderer.addFloat(a.chest.x, a.chest.y - 20, 'BODY!', '#ffb56b', 18);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate(25);
         break;
       }
       case 'blocked': {
         const a = anchor(e.target);
+        const spot = e.body ? a.chest : a.head;
         audio.blockThud();
-        renderer.addImpact(a.head.x, a.head.y + 10, 3, '#aab');
+        renderer.addImpact(spot.x, spot.y + 10, 3, '#aab');
         break;
       }
       case 'guardbreak': {
