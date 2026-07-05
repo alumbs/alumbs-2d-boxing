@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0f16">
+  <title>Alumbs 2D Boxing</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥊</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ FIGHTER SELECT ============ -->
+  <div id="screen-select" class="screen">
+    <header class="select-header">
+      <h1>🥊 ALUMBS BOXING</h1>
+      <h2 id="select-title">CHOOSE YOUR FIGHTER</h2>
+    </header>
+    <div id="fighter-grid"></div>
+  </div>
+
+  <!-- ============ FIGHT ============ -->
+  <div id="screen-fight" class="screen hidden">
+
+    <div id="hud">
+      <div class="corner">
+        <div class="hud-name" id="hud-p-name">YOU</div>
+        <div class="bar health"><div id="hud-p-health"></div></div>
+        <div class="bar stam"><div id="hud-p-stam"></div></div>
+      </div>
+      <div class="hud-center">
+        <div id="hud-round">R1</div>
+        <div id="hud-clock">3:00</div>
+      </div>
+      <div class="corner right">
+        <div class="hud-name" id="hud-o-name">CPU</div>
+        <div class="bar health mirror"><div id="hud-o-health"></div></div>
+        <div class="bar stam mirror"><div id="hud-o-stam"></div></div>
+      </div>
+    </div>
+
+    <div id="stage">
+      <canvas id="ring"></canvas>
+
+      <div id="banner" class="banner"></div>
+
+      <div id="count-overlay" class="overlay hidden">
+        <div id="count-num">1</div>
+        <div id="count-msg">GET UP!</div>
+        <div id="rise-ui">
+          <div id="rise-meter"><div id="rise-meter-fill"></div></div>
+          <button id="btn-rise">TAP! TAP! TAP!</button>
+        </div>
+      </div>
+
+      <div id="rest-panel" class="overlay panel hidden">
+        <h3 id="rest-title">END OF ROUND 1</h3>
+        <p id="rest-cards"></p>
+        <p class="rest-tip">Your corner works on you… health &amp; stamina recovering.</p>
+        <button id="btn-ready" class="big-btn">READY</button>
+      </div>
+
+      <div id="result-panel" class="overlay panel hidden">
+        <h3 id="result-title">YOU WIN!</h3>
+        <p id="result-sub"></p>
+        <div id="result-cards" class="cards"></div>
+        <div id="result-stats" class="cards"></div>
+        <div class="panel-btns">
+          <button id="btn-rematch" class="big-btn">REMATCH</button>
+          <button id="btn-menu" class="big-btn alt">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div class="cluster">
+        <button id="btn-dodge" class="ctl defense">DODGE</button>
+        <button id="btn-block" class="ctl defense block">BLOCK</button>
+      </div>
+      <div class="cluster punches">
+        <button class="ctl punch" data-punch="jab">JAB</button>
+        <button class="ctl punch" data-punch="cross">CROSS</button>
+        <button class="ctl punch" data-punch="hook">HOOK</button>
+        <button class="ctl punch" data-punch="uppercut">UPPER</button>
+      </div>
+    </div>
+    <div id="key-hint" class="hidden">⌨ J jab · K cross · L hook · I uppercut · S / Space block (hold) · A / D dodge · mash Space to get up</div>
+  </div>
+
+  <script src="js/fighters.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
