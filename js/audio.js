@@ -17,6 +17,63 @@ class AudioSys {
     this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    this.startCrowd();
+  }
+
+  // Continuous crowd bed whose volume follows the fight's excitement
+  startCrowd() {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = 420;
+    this.crowdGain = this.ctx.createGain();
+    this.crowdGain.gain.value = 0.015;
+    src.connect(filt).connect(this.crowdGain).connect(this.ctx.destination);
+    src.start();
+    this.excitement = 0;
+  }
+
+  excite(amount) {
+    this.excitement = Math.min(1, (this.excitement || 0) + amount);
+  }
+
+  // Call every frame: excitement decays, crowd volume follows
+  update(dt) {
+    if (!this.crowdGain) return;
+    this.excitement = Math.max(0, (this.excitement || 0) - dt * 0.25);
+    const target = 0.015 + this.excitement * 0.14;
+    const g = this.crowdGain.gain;
+    g.value += (target - g.value) * Math.min(1, dt * 3);
+  }
+
+  stunWobble() {
+    if (!this.ctx) return;
+    const t = this.now();
+    const o = this.ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(820, t);
+    o.frequency.exponentialRampToValueAtTime(240, t + 0.6);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.18, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    o.connect(g).connect(this.ctx.destination);
+    o.start(t);
+    o.stop(t + 0.6);
+  }
+
+  // Corner man / announcer via speech synthesis (best-effort, silent if unsupported)
+  say(text) {
+    try {
+      if (!window.speechSynthesis) return;
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.05;
+      u.pitch = 0.75;
+      u.volume = 0.9;
+      speechSynthesis.speak(u);
+    } catch (e) { /* no speech, no problem */ }
   }
 
   now() { return this.ctx ? this.ctx.currentTime : 0; }

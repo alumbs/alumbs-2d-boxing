@@ -29,6 +29,58 @@ html, body {
   flex-direction: column;
 }
 
+/* ============ MENU & CAREER ============ */
+#screen-menu, #screen-career {
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.menu-header h2 { letter-spacing: 4px; }
+.menu-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(320px, 90%);
+}
+.menu-btn { font-size: 20px; padding: 18px; }
+.career-summary { text-align: center; font-size: 13px; color: var(--muted); }
+.career-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(340px, 92%);
+}
+.career-next-label { font-size: 12px; letter-spacing: 3px; color: var(--muted); }
+#career-opponent { width: 100%; }
+#career-opponent .card { width: 100%; cursor: default; }
+#career-opponent .card:active { transform: none; }
+.career-btns { width: 100%; }
+.career-btns .big-btn { flex: 1; }
+.career-reset {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 8px;
+}
+.champion-banner {
+  font-size: clamp(20px, 5vw, 30px);
+  font-weight: 900;
+  color: var(--accent2);
+  text-align: center;
+  letter-spacing: 2px;
+}
+.select-back { align-self: center; margin-top: 16px; }
+.rest-advice { font-size: 14px; color: var(--accent2); font-style: italic; max-width: 46ch; }
+
 /* ============ SELECT ============ */
 #screen-select {
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
@@ -268,6 +320,7 @@ html, body {
 .ctl.move.held { background: linear-gradient(180deg, #5d6b82, #4a5568); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
 .ctl.defense.held { background: linear-gradient(180deg, #4d8fd6, #3a6ea8); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
 .ctl.duck { background: linear-gradient(180deg, #6b5a9e, #4d4076); }
+.ctl.wide { grid-column: 1 / -1; min-height: clamp(34px, 7vw, 44px); }
 .ctl.duck.held { background: linear-gradient(180deg, #8574b8, #6b5a9e); transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
 
 #key-hint {
@@ -291,7 +344,9 @@ html, body {
 /* Landscape phones: tighter vertical budget */
 @media (orientation: landscape) and (max-height: 480px) {
   #screen-fight { gap: 3px; }
-  .ctl { min-height: 42px; }
+  .cluster { gap: 5px; }
+  .ctl { min-height: 34px; }
+  .ctl.wide, .ctl.body { min-height: 28px; }
   #hud-clock { font-size: 16px; }
   #key-hint { display: none !important; }
 }

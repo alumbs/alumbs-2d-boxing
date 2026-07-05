@@ -23,6 +23,14 @@ const COUNTER_MULT = 1.5;
 const INPUT_BUFFER = 0.5;       // seconds a queued input stays alive
 const DUCK_DRAIN = 9;           // stamina per second while covering up
 const COUNT_TICK = 0.85;        // real seconds per count number
+const STUN_CD = 6;              // seconds before the same fighter can be dazed again
+
+// What each evade beats. Lean pulls the head back and out of range;
+// weave rolls under — but ducking into an uppercut is a disaster.
+const DODGE_EVADES = {
+  lean:  { jab: 1, cross: 1, body: 1 },
+  weave: { jab: 1, cross: 1, hook: 1 },
+};
 
 // How much damage gets through each guard zone, per punch destination.
 // <= 0.3 means the guard truly caught it (chip damage, no hitstun).
@@ -73,6 +81,9 @@ function makeFighter(def, isAI, x, dir) {
     punch: null,          // { type, def, dur:{windup,active,total}, resolved, gassed }
     blockHeld: false,
     guardZone: 'high',    // high | low | duck
+    dodgeKind: 'lean',    // lean | weave
+    stunCd: 0,
+    stunDur: 0,
     dodgeCd: 0,
     counterWindow: 0,
     graceT: 0,            // invulnerability after rising
@@ -144,11 +155,11 @@ class Game {
   setMove(dir) {
     this.p.moveDir = clamp(dir, -1, 1);
   }
-  dodge() {
+  dodge(kind = 'lean') {
     if (this.state !== 'fighting') return;
     const f = this.p;
-    if ((f.state === 'idle' || f.state === 'block') && f.dodgeCd <= 0) this.startDodge(f);
-    else this.buffer = { kind: 'dodge', ttl: INPUT_BUFFER };
+    if ((f.state === 'idle' || f.state === 'block') && f.dodgeCd <= 0) this.startDodge(f, kind);
+    else this.buffer = { kind: 'dodge', dodgeKind: kind, ttl: INPUT_BUFFER };
   }
   drainBuffer(dt) {
     const b = this.buffer;
@@ -159,7 +170,7 @@ class Game {
     if (f.state !== 'idle' && f.state !== 'block') return;
     this.buffer = null;
     if (b.kind === 'punch') this.throwPunch(f, b.type);
-    else if (f.dodgeCd <= 0) this.startDodge(f);
+    else if (f.dodgeCd <= 0) this.startDodge(f, b.dodgeKind);
   }
   riseTap() {
     if (this.state !== 'count' || !this.count || this.count.downed !== this.p) return;
@@ -180,13 +191,24 @@ class Game {
     f.total.thrown++;
   }
 
-  startDodge(f) {
+  startDodge(f, kind = 'lean') {
     if (f.state !== 'idle' && f.state !== 'block') return;
     if (f.dodgeCd > 0) return;
     f.state = 'dodge';
     f.stateT = 0;
+    f.dodgeKind = kind;
     f.dodgeCd = DODGE_DUR + DODGE_COOLDOWN;
     f.stamina = Math.max(0, f.stamina - DODGE_STAM);
+  }
+
+  stun(f) {
+    f.state = 'stun';
+    f.stateT = 0;
+    f.stunDur = clamp(1.9 - f.def.chin * 0.06, 1.2, 1.9);
+    f.stunCd = STUN_CD + f.stunDur;
+    f.punch = null;
+    f.moveDir = 0;
+    this.emit({ type: 'stun', target: f });
   }
 
   // Move a fighter, respecting ring bounds and the minimum gap
@@ -216,16 +238,6 @@ class Game {
 
     if (target.graceT > 0) { this.emit({ type: 'miss', by: attacker }); return; }
 
-    // Dodged?
-    if (target.state === 'dodge' &&
-        target.stateT >= DODGE_INVULN_FROM && target.stateT <= DODGE_INVULN_TO) {
-      target.counterWindow = COUNTER_WINDOW;
-      punch.dur.total += pdef.recover * 0.5; // whiff punishment
-      attacker.stamina = Math.max(0, attacker.stamina - 3);
-      this.emit({ type: 'dodged', by: target, attacker });
-      return;
-    }
-
     // Damage
     const isBody = pdef.target === 'body';
     let dmg = pdef.dmg * (0.6 + attacker.def.power * 0.08);
@@ -233,10 +245,26 @@ class Game {
     if (punch.gassed) dmg *= 0.5;
     let counter = false;
     if (attacker.counterWindow > 0) { dmg *= COUNTER_MULT; counter = true; attacker.counterWindow = 0; }
+    let smash = false;
+
+    // Evading? Lean beats straights & body; weave beats hooks —
+    // but weaving into an uppercut is a disaster.
+    if (target.state === 'dodge' &&
+        target.stateT >= DODGE_INVULN_FROM && target.stateT <= DODGE_INVULN_TO) {
+      const kind = target.dodgeKind || 'lean';
+      if (DODGE_EVADES[kind][punch.type]) {
+        target.counterWindow = COUNTER_WINDOW;
+        punch.dur.total += pdef.recover * 0.5; // whiff punishment
+        attacker.stamina = Math.max(0, attacker.stamina - 3);
+        this.emit({ type: 'dodged', by: target, attacker, kind });
+        return;
+      }
+      if (kind === 'weave' && punch.type === 'uppercut') { dmg *= 1.2; smash = true; }
+      // otherwise the wrong evade just fails: the punch lands normally
+    }
 
     // Blocked? Guard zones matter: high covers the head, low covers the
     // body, duck covers both (but drains stamina and loses to uppercuts).
-    let smash = false;
     if (target.state === 'block') {
       const zone = target.guardZone || 'high';
       if (zone === 'duck' && punch.type === 'uppercut') {
@@ -267,6 +295,7 @@ class Game {
       }
     }
 
+    if (target.state === 'stun') dmg *= 1.25; // free shots on a dazed fighter
     dmg = Math.round(dmg * 10) / 10;
     target.health = Math.max(0, target.health - dmg);
     if (isBody) target.stamina = Math.max(0, target.stamina - dmg * 2.2); // body work steals wind
@@ -283,8 +312,17 @@ class Game {
       const chance = (dmg / 22) * (1 - target.def.chin * 0.07);
       if (Math.random() < chance) down = true;
     }
-    if (down) this.knockdown(target, attacker);
-    else if (target.state !== 'hit' || target.stateT > 0.05) {
+    if (down) { this.knockdown(target, attacker); return; }
+
+    // Dazed? Big counters, duck-smashes, and clean shots on a gassed
+    // fighter leave them wobbling — open season until they recover.
+    if (target.state !== 'stun' && target.stunCd <= 0 && !isBody &&
+        ((counter && dmg >= 3) || smash || (target.stamina <= 10 && dmg >= 3))) {
+      this.stun(target);
+      return;
+    }
+    if (target.state === 'stun') return; // stays wobbling, no fresh hitstun
+    if (target.state !== 'hit' || target.stateT > 0.05) {
       this.stagger(target, clamp((isBody ? 0.12 : 0.16) + dmg * 0.03, 0.12, 0.45));
     }
   }
@@ -473,7 +511,9 @@ class Game {
     if (f.dodgeCd > 0) f.dodgeCd -= dt;
     if (f.graceT > 0) f.graceT -= dt;
     if (f.counterWindow > 0) f.counterWindow -= dt;
+    if (f.stunCd > 0) f.stunCd -= dt;
     if (f.state === 'rising' && f.stateT > 0.7) { f.state = 'idle'; f.stateT = 0; }
+    if (f.state === 'stun' && f.stateT > f.stunDur) { f.state = 'idle'; f.stateT = 0; }
     if (f.state === 'punch' || f.state === 'hit' || f.state === 'dodge') {
       // let animations settle during non-fighting states
       if (f.stateT > 0.6) { f.state = 'idle'; f.stateT = 0; f.punch = null; }
@@ -485,6 +525,7 @@ class Game {
     if (f.dodgeCd > 0) f.dodgeCd -= dt;
     if (f.graceT > 0) f.graceT -= dt;
     if (f.counterWindow > 0) f.counterWindow -= dt;
+    if (f.stunCd > 0) f.stunCd -= dt;
 
     // Stamina regen (ducking actively burns stamina — you can't cover up forever)
     const regenBase = 4.5 + f.def.stamina * 0.55;
@@ -533,12 +574,13 @@ class Game {
         if (!f.isAI && !f.blockHeld) { f.state = 'idle'; f.stateT = 0; }
         break;
       case 'dodge': {
-        // Lean back drifts you slightly out of range
-        const back = -f.dir * 55 * dt;
-        let nx = f.x + back;
-        if (f.dir > 0) nx = clamp(nx, RING_LEFT, opp.x - MIN_GAP);
-        else nx = clamp(nx, opp.x + MIN_GAP, RING_RIGHT);
-        f.x = nx;
+        // Leaning back drifts you slightly out of range; a weave holds ground
+        if (f.dodgeKind === 'lean') {
+          let nx = f.x - f.dir * 55 * dt;
+          if (f.dir > 0) nx = clamp(nx, RING_LEFT, opp.x - MIN_GAP);
+          else nx = clamp(nx, opp.x + MIN_GAP, RING_RIGHT);
+          f.x = nx;
+        }
         if (f.stateT >= DODGE_DUR) {
           f.state = (f === this.p && f.blockHeld) ? 'block' : 'idle';
           f.stateT = 0;
@@ -550,6 +592,9 @@ class Game {
           f.state = (f === this.p && f.blockHeld) ? 'block' : 'idle';
           f.stateT = 0;
         }
+        break;
+      case 'stun':
+        if (f.stateT >= f.stunDur) { f.state = 'idle'; f.stateT = 0; }
         break;
       case 'rising':
         if (f.stateT >= 0.7) { f.state = 'idle'; f.stateT = 0; }
@@ -585,7 +630,11 @@ class Game {
         if (Math.random() < reactChance) {
           const wantsDodge = Math.random() < (f.def.style === 'counter' ? 0.5 : f.def.style === 'out-boxer' ? 0.4 : 0.18);
           if (wantsDodge && f.dodgeCd <= 0 && f.state === 'idle') {
-            this.startDodge(f);
+            // Pick the correct evade for the incoming punch (~15% wrong pick)
+            const pt = opp.punch.type;
+            let kind = pt === 'hook' ? 'weave' : pt === 'uppercut' || pt === 'body' ? 'lean' : (Math.random() < 0.5 ? 'lean' : 'weave');
+            if (Math.random() < 0.15) kind = kind === 'lean' ? 'weave' : 'lean';
+            this.startDodge(f, kind);
           } else {
             // Read the incoming punch and pick the right guard (~12% misread)
             const incoming = opp.punch.def.target === 'body' ? 'low' : 'high';
@@ -637,12 +686,17 @@ class Game {
     let agg = style.agg * (0.35 + 0.65 * stamFrac);
     if (opp.state === 'hit' || (opp.state === 'punch' && opp.punch && opp.punch.resolved)) agg *= 1.7;
     if (opp.state === 'block') agg *= 0.55;
-    if (f.counterWindow > 0) agg = 0.95; // cash in the counter
+    if (opp.state === 'stun') agg = 0.98; // open season
+    if (f.counterWindow > 0) agg = 0.95;  // cash in the counter
 
     const r = Math.random();
     if (r < agg) {
       let combo;
-      if (f.counterWindow > 0) combo = ['cross'];
+      if (opp.state === 'stun') {
+        const finishers = [['uppercut'], ['hook', 'uppercut'], ['cross', 'hook']];
+        combo = finishers[Math.floor(Math.random() * finishers.length)];
+      }
+      else if (f.counterWindow > 0) combo = ['cross'];
       else if (opp.state === 'block' && Math.random() < 0.6) {
         // Attack whatever the opponent's guard leaves open
         const zone = opp.guardZone || 'high';

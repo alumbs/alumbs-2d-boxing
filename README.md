@@ -3,28 +3,33 @@
 A mobile-first, side-view 2D boxing game. Pure HTML/CSS/JS + Canvas — no build
 step, no dependencies, no backend.
 
-**Play:** pick a fighter, pick an opponent, survive 10 rounds. Win by KO, TKO
+**Play:** **Career** — pick your fighter and climb the whole roster, record
+saved in your browser, become Undisputed Champion. **Exhibition** — any
+fighter vs any opponent. Fights go up to 10 rounds; win by KO, TKO
 (3 knockdowns in a round) or the judges' scorecards.
 
 ## Controls
 
-**Touch (mobile):** left cluster = ◀ ▶ move (hold), DODGE, DUCK (hold),
-BLOCK ▲ high guard (hold), BLOCK ▼ low guard (hold). Right cluster = JAB /
-CROSS / HOOK / UPPER / BODY. When you're knocked down, mash the TAP button to
-beat the count — later knockdowns need more mashing.
+**Touch (mobile):** left cluster = ◀ ▶ move (hold), LEAN, WEAVE, BLOCK ▲
+high guard (hold), BLOCK ▼ low guard (hold), DUCK (hold). Right cluster =
+JAB / CROSS / HOOK / UPPER / BODY. When you're knocked down, mash the TAP
+button to beat the count — later knockdowns need more mashing.
 
-**Keyboard:** `A`/`D` move · `W` dodge · `S`/`Space` high block · `X` low
-block · `C` duck (all guards are hold) · `J` jab · `K` cross · `L` hook ·
-`I` uppercut · `M` body · mash `Space` to get up.
+**Keyboard:** `A`/`D` move · `W` lean · `E` weave · `S`/`Space` high block ·
+`X` low block · `C` duck (all guards are hold) · `J` jab · `K` cross · `L`
+hook · `I` uppercut · `M` body · mash `Space` to get up.
 
 **Tips:** watch the opponent's glove — a pulsing yellow ring means a punch is
 coming; guard or dodge it. **High guard stops head shots but leaks body
 shots; low guard is the reverse — read the punch and match the guard.**
 Ducking covers both but burns stamina while held, and an uppercut smashes
 straight through it. The same applies to the opponent: watch their guard
-height and hit what's open. Inputs pressed while you're mid-punch are buffered
-and fire the instant you're free. Dodging opens a counter window: your next
-punch does 1.5×. Mind your range — jabs reach farthest, uppercuts and body
+height and hit what's open. **LEAN evades straights and body shots; WEAVE
+rolls under hooks — but weaving into an uppercut gets you smashed.** A clean
+evade opens a counter window (1.5×), and a big counter leaves them DAZED —
+wobbling, stars circling, free shots until they recover. Inputs pressed
+while you're mid-punch are buffered
+and fire the instant you're free. Mind your range — jabs reach farthest, uppercuts and body
 shots need to be close. Body shots steal stamina. Gassed punches hit like
 pillows. The roster is ordered weakest to strongest — start at the top of the
 list if you're getting hurt.

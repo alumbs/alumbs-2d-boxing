@@ -10,13 +10,44 @@
 </head>
 <body>
 
+  <!-- ============ MAIN MENU ============ -->
+  <div id="screen-menu" class="screen">
+    <header class="select-header menu-header">
+      <h1>🥊 ALUMBS BOXING</h1>
+      <h2>SIDE-STREET CHAMPIONSHIP</h2>
+    </header>
+    <div class="menu-btns">
+      <button id="btn-career" class="big-btn menu-btn">🏆 CAREER</button>
+      <div id="career-summary" class="career-summary hidden"></div>
+      <button id="btn-exhibition" class="big-btn alt menu-btn">🥊 EXHIBITION</button>
+    </div>
+  </div>
+
+  <!-- ============ CAREER HUB ============ -->
+  <div id="screen-career" class="screen hidden">
+    <header class="select-header">
+      <h1 id="career-title">🏆 CAREER</h1>
+      <h2 id="career-record">0-0 · 0 KO</h2>
+    </header>
+    <div class="career-body">
+      <div id="career-next-label" class="career-next-label">NEXT OPPONENT</div>
+      <div id="career-opponent"></div>
+      <div class="panel-btns career-btns">
+        <button id="btn-career-fight" class="big-btn">FIGHT</button>
+        <button id="btn-career-menu" class="big-btn alt">MENU</button>
+      </div>
+      <button id="btn-career-reset" class="career-reset">start a new career</button>
+    </div>
+  </div>
+
   <!-- ============ FIGHTER SELECT ============ -->
-  <div id="screen-select" class="screen">
+  <div id="screen-select" class="screen hidden">
     <header class="select-header">
       <h1>🥊 ALUMBS BOXING</h1>
       <h2 id="select-title">CHOOSE YOUR FIGHTER</h2>
     </header>
     <div id="fighter-grid"></div>
+    <button id="btn-select-back" class="big-btn alt select-back">← MENU</button>
   </div>
 
   <!-- ============ FIGHT ============ -->
@@ -56,6 +87,7 @@
       <div id="rest-panel" class="overlay panel hidden">
         <h3 id="rest-title">END OF ROUND 1</h3>
         <p id="rest-cards"></p>
+        <p id="rest-advice" class="rest-advice"></p>
         <p class="rest-tip">Your corner works on you… health &amp; stamina recovering.</p>
         <button id="btn-ready" class="big-btn">READY</button>
       </div>
@@ -66,6 +98,7 @@
         <div id="result-cards" class="cards"></div>
         <div id="result-stats" class="cards"></div>
         <div class="panel-btns">
+          <button id="btn-continue" class="big-btn hidden">CONTINUE</button>
           <button id="btn-rematch" class="big-btn">REMATCH</button>
           <button id="btn-menu" class="big-btn alt">MAIN MENU</button>
         </div>
@@ -76,10 +109,11 @@
       <div class="cluster movedef">
         <button id="btn-back" class="ctl move">◀</button>
         <button id="btn-fwd" class="ctl move">▶</button>
-        <button id="btn-dodge" class="ctl defense">DODGE</button>
-        <button id="btn-duck" class="ctl defense duck">DUCK</button>
+        <button id="btn-lean" class="ctl defense">LEAN</button>
+        <button id="btn-weave" class="ctl defense">WEAVE</button>
         <button id="btn-guard-high" class="ctl defense">BLOCK ▲</button>
         <button id="btn-guard-low" class="ctl defense">BLOCK ▼</button>
+        <button id="btn-duck" class="ctl defense duck wide">DUCK</button>
       </div>
       <div class="cluster punches">
         <button class="ctl punch" data-punch="jab">JAB</button>
@@ -89,7 +123,7 @@
         <button class="ctl punch body" data-punch="body">BODY</button>
       </div>
     </div>
-    <div id="key-hint" class="hidden">⌨ A/D move · W dodge · S/Space high block · X low block · C duck (hold) · J jab · K cross · L hook · I uppercut · M body · mash Space to get up</div>
+    <div id="key-hint" class="hidden">⌨ A/D move · W lean · E weave · S/Space high block · X low block · C duck (hold) · J jab · K cross · L hook · I uppercut · M body · mash Space to get up</div>
   </div>
 
   <script src="js/fighters.js"></script>

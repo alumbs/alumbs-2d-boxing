@@ -27,13 +27,15 @@ function bindInput(getGame, onAnyGesture) {
     });
   });
 
-  const dodgeBtn = document.getElementById('btn-dodge');
-  if (dodgeBtn) dodgeBtn.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    onAnyGesture();
-    const g = getGame();
-    if (g) g.dodge();
-  });
+  for (const [id, kind] of [['btn-lean', 'lean'], ['btn-weave', 'weave']]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      onAnyGesture();
+      const g = getGame();
+      if (g) g.dodge(kind);
+    });
+  }
 
   // Hold-style buttons
   function bindHold(id, onDown, onUp) {
@@ -85,7 +87,8 @@ function bindInput(getGame, onAnyGesture) {
     const k = e.key.toLowerCase();
     if (keyPunch[k]) { g.pressPunch(keyPunch[k]); e.preventDefault(); }
     else if (k === 'a' || k === 'd') { moveKeys[k] = true; syncMove(g); e.preventDefault(); }
-    else if (k === 'w') { g.dodge(); e.preventDefault(); }
+    else if (k === 'w') { g.dodge('lean'); e.preventDefault(); }
+    else if (k === 'e') { g.dodge('weave'); e.preventDefault(); }
     else if (keyGuard[k]) {
       if (k === ' ' && g.state === 'count') g.riseTap();
       else pushZone(keyGuard[k]);

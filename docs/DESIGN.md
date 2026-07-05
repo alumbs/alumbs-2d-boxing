@@ -4,8 +4,15 @@ A mobile-first, side-view 2D boxing game. Pure HTML/CSS/JS + Canvas, no build st
 no dependencies, no backend. Deploys as a static site behind nginx.
 
 ## Core loop
-Pick your fighter → pick an opponent → fight up to 10 rounds → win by KO, TKO
-(3 knockdowns in one round) or judges' decision → rematch or back to menu.
+Two modes from the main menu:
+- **Career**: pick your fighter once, then climb the roster weakest → strongest
+  (everyone but yourself, 11 fights). Wins advance the ladder; losses let you
+  retry. Record (W-L, KOs) persists in localStorage (`alumbs-career-v1`).
+  Beat everyone → Undisputed Champion.
+- **Exhibition**: pick any fighter and any opponent for a one-off bout.
+
+Fights run up to 10 rounds → win by KO, TKO (3 knockdowns in one round) or
+judges' decision.
 
 ## Fighters
 8 fighters, each defined in `js/fighters.js` with stats on a 1–10 scale:
@@ -32,6 +39,17 @@ that selects the AI's combo table, aggression and dodge/block preference.
   and body shots need to be close.
 - **Body shots**: deal moderate health damage but heavy stamina damage
   ("stealing wind") and can never score a flash knockdown.
+- **Evades** (`DODGE_EVADES` in game.js): two dodge kinds. **Lean** (pull the
+  head back) evades jabs, crosses and body shots; **weave** (roll under)
+  evades jabs, crosses and hooks. So hooks must be weaved, uppercuts must be
+  leaned — and weaving into an uppercut gets you smashed for bonus damage.
+  A successful evade opens the 1.5× counter window. Leans drift you back;
+  weaves hold ground.
+- **Dazed/stun**: a big counter (≥3 dmg), a duck/weave smash, or a clean head
+  shot on a gassed fighter (≤10 stamina) leaves them wobbling for
+  `1.9 − chin×0.06` seconds — they can't act, take 1.25× damage, and further
+  hits don't reset the wobble. 6s cooldown before the same fighter can be
+  dazed again. The AI goes for finishers (hooks/uppercuts) on a dazed player.
 - **Guard zones** (`GUARD_THROUGH` in game.js): a guard is held as high, low,
   or duck. High stops head punches (15% chip) but leaks body shots (60%
   through); low is the mirror (12% body / 70% head). Duck is a crouched full
@@ -87,12 +105,24 @@ State-machine driven, personality from stats + style:
 - Gets a ~1s grace period after each bell before it may attack.
 
 ## Controls
-- **Touch**: left cluster = ◀ ▶ move (hold), DODGE, DUCK (hold), BLOCK ▲
-  (hold), BLOCK ▼ (hold); right cluster = JAB / CROSS / HOOK / UPPER / BODY.
-  During a count: mash the big TAP button to get up.
-- **Keyboard**: A/D move, W dodge, S or Space = high block, X = low block,
-  C = duck (all hold), J jab, K cross, L hook, I uppercut, M body. Mash Space
-  to rise. Overlapping guard holds resolve to the most recently pressed.
+- **Touch**: left cluster = ◀ ▶ move (hold), LEAN, WEAVE, BLOCK ▲ (hold),
+  BLOCK ▼ (hold), DUCK (hold); right cluster = JAB / CROSS / HOOK / UPPER /
+  BODY. During a count: mash the big TAP button to get up.
+- **Keyboard**: A/D move, W lean, E weave, S or Space = high block, X = low
+  block, C = duck (all hold), J jab, K cross, L hook, I uppercut, M body.
+  Mash Space to rise. Overlapping guard holds resolve to the most recently
+  pressed.
+
+## Presentation / juice
+- **Hitstop**: the sim freezes ~60–130ms on big hits, counters, dazes and
+  knockdowns (handled in main.js, not the sim).
+- **Squash**: the struck head squashes briefly (renderer.squash per fighter).
+- **Stun visuals**: wobble lean, hanging arms, orbiting ✦ stars.
+- **Crowd**: a looping filtered-noise bed whose volume follows an
+  `excitement` value fed by events (hits, knockdowns, dazes, fight end).
+- **Corner voice**: speechSynthesis (best-effort) announces rounds, gives
+  state-aware corner advice between rounds (also shown as text), and calls
+  the winner.
 - Holding block through a bell re-engages the guard the instant the round
   starts (idle + held button → block).
 

@@ -16,6 +16,7 @@ class Renderer {
     this.flash = 0;
     this.sparks = [];
     this.floats = [];
+    this.squash = { p: 0, o: 0 };
     this.anchors = { p: { head: { x: 360, y: 246 } }, o: { head: { x: 540, y: 246 } } };
     this.crowd = this.makeCrowd();
     this.resize();
@@ -75,6 +76,8 @@ class Renderer {
 
   addFlash(v) { this.flash = Math.max(this.flash, v); }
 
+  addSquash(key, amt = 1) { this.squash[key] = Math.min(1.2, Math.max(this.squash[key], amt)); }
+
   draw(game, dt) {
     this.t += dt;
     const ctx = this.ctx;
@@ -91,7 +94,9 @@ class Renderer {
     ctx.rect(0, 0, CW, CH);
     ctx.clip();
 
-    // Shake
+    // Shake + squash decay
+    this.squash.p = Math.max(0, this.squash.p - dt * 5);
+    this.squash.o = Math.max(0, this.squash.o - dt * 5);
     this.shake = Math.max(0, this.shake - dt * 26);
     if (this.shake > 0) {
       ctx.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
@@ -226,9 +231,19 @@ class Renderer {
     let lean = 0;
     let headDy = 0;
     if (state === 'dodge') {
-      const dp = Math.sin(Math.min(1, t / 0.4) * Math.PI);
-      lean = -34 * dp;
-      headDy = 6 * dp;
+      const dp = Math.sin(Math.min(1, t / 0.45) * Math.PI);
+      if (f.dodgeKind === 'weave') {
+        // Roll under: head drops low, slight forward lean
+        lean = 8 * dp;
+        headDy = 38 * dp;
+      } else {
+        lean = -34 * dp;
+        headDy = 6 * dp;
+      }
+    } else if (state === 'stun') {
+      // Wobbling on rubber legs
+      lean = Math.sin(this.t * 7) * 9;
+      headDy = 3 + Math.sin(this.t * 11) * 2;
     } else if (state === 'hit') {
       const hp = 1 - Math.min(1, t / (f.hitDur || 0.25));
       lean = -16 * hp;
@@ -315,10 +330,11 @@ class Renderer {
     ctx.ellipse(shoX - dir * 8, (hipY + shoY) / 2 - 4, 10, 26, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Head
+    // Head (squashes on impact)
+    const sq = this.squash[key] || 0;
     ctx.fillStyle = def.skin;
     ctx.beginPath();
-    ctx.arc(headX, headY, 21, 0, Math.PI * 2);
+    ctx.ellipse(headX, headY, 21 * (1 + sq * 0.28), 21 * (1 - sq * 0.3), 0, 0, Math.PI * 2);
     ctx.fill();
     // Hair cap
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -370,6 +386,19 @@ class Renderer {
       ctx.fill();
     }
 
+    // Dazed: stars orbiting the head
+    if (state === 'stun') {
+      ctx.fillStyle = '#ffe14d';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      for (let i = 0; i < 3; i++) {
+        const a = this.t * 5 + i * (Math.PI * 2 / 3);
+        ctx.globalAlpha = 0.6 + 0.4 * Math.sin(a * 2);
+        ctx.fillText('✦', headX + Math.cos(a) * 30, headY - 18 + Math.sin(a) * 9);
+      }
+      ctx.globalAlpha = 1;
+    }
+
     // Arms + gloves
     this.drawArms(ctx, f, x, dir, oppX, shoX, shoY, headX, headY, stamFrac, downness);
 
@@ -418,6 +447,10 @@ class Renderer {
     } else if (victory) {
       lead = { x: x + dir * 10, y: 175 + Math.sin(this.t * 6) * 5 };
       rear = { x: x - dir * 26, y: 255 };
+    } else if (f.state === 'stun') {
+      // Arms hanging heavy
+      lead = { x: x + dir * 28, y: shoY + 58 + Math.sin(this.t * 7) * 4 };
+      rear = { x: x - dir * 6, y: shoY + 62 };
     } else if (downish) {
       lead = { x: x + dir * 40, y: shoY + 40 };
       rear = { x: x - dir * 10, y: shoY + 44 };
