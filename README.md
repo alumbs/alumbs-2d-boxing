@@ -23,7 +23,11 @@ more mashing.
 **Keyboard:** `A`/`D` move · `W`/`S` switch lane · `Q` lean · `E` weave ·
 `Space` high block · `X` low block · `C` duck (all guards are hold) · `J`
 jab · `K` cross · `L` hook · `I` uppercut · `M` body · mash `Space` to get
-up.
+up · `Esc` pause.
+
+**Pause:** the ❚❚ button top-right of the ring, or `Esc`, freezes the fight
+(clock, punches, AI, sound) — Resume or bail to the Main Menu. Switching
+tabs/apps mid-fight pauses automatically.
 
 **The ring has three lanes** (near, mid, far). Punches only land when both
 fighters are in the same lane — stepping lanes at the right moment side-steps
