@@ -51,8 +51,9 @@ const START_O_X = 600;
 // are settled in the same lane, so a lane step doubles as a side-step evade.
 const LANES = 3;
 const LANE_STEP_DUR = 0.25;  // seconds for laneF to travel one lane
-const LANE_COOLDOWN = 0.3;
+const LANE_COOLDOWN = 0.15;
 const LANE_STAM = 2;
+const LANE_INPUT_BUFFER = 0.35; // seconds a queued lane step stays alive
 const SEPARATION_SPEED = 260; // px/s to shove overlapping fighters apart
 
 const AI_STYLES = {
@@ -139,6 +140,7 @@ class Game {
     this.count = null;         // { downed, standing, num, t, riseMeter, riseTarget, aiRiseAt }
     this.result = null;        // { method, winner: 'p'|'o'|'draw', round, totals }
     this.buffer = null;        // queued player input { kind, type?, ttl }
+    this.laneBuffer = null;    // queued lane step { d, ttl }
     this.o.ai.cd = 0.9 + Math.random() * 0.5; // no cheap shots right at the bell
     this.events.push({ type: 'roundstart', round: 1 });
   }
@@ -174,19 +176,35 @@ class Game {
   setMove(dir) {
     this.p.moveDir = clamp(dir, -1, 1);
   }
-  // d: -1 step to a farther lane, +1 step nearer
+  // d: -1 step to a farther lane, +1 step nearer. Like punches and dodges,
+  // a step pressed while busy or on cooldown is buffered and fires the
+  // instant the fighter is free, instead of being silently dropped.
   laneStep(d) {
     if (this.state !== 'fighting') return;
-    this.doLaneStep(this.p, d);
+    const f = this.p;
+    if (this.canLaneStep(f)) this.doLaneStep(f, d);
+    else this.laneBuffer = { d, ttl: LANE_INPUT_BUFFER };
+  }
+  canLaneStep(f) {
+    return (f.state === 'idle' || f.state === 'block') && f.laneCd <= 0;
   }
   doLaneStep(f, d) {
-    if ((f.state !== 'idle' && f.state !== 'block') || f.laneCd > 0) return;
+    if (!this.canLaneStep(f)) return;
     const nl = clamp(f.lane + d, 0, LANES - 1);
     if (nl === f.lane) return;
     f.lane = nl;
     f.laneCd = LANE_STEP_DUR + LANE_COOLDOWN;
     f.stamina = Math.max(0, f.stamina - LANE_STAM);
     this.emit({ type: 'lanestep', by: f });
+  }
+  drainLaneBuffer(dt) {
+    const b = this.laneBuffer;
+    if (!b) return;
+    b.ttl -= dt;
+    if (b.ttl <= 0) { this.laneBuffer = null; return; }
+    if (!this.canLaneStep(this.p)) return;
+    this.laneBuffer = null;
+    this.doLaneStep(this.p, b.d);
   }
   dodge(kind = 'lean') {
     if (this.state !== 'fighting') return;
@@ -417,6 +435,7 @@ class Game {
     standing.punch = null;
     standing.moveDir = 0;
     this.buffer = null;
+    this.laneBuffer = null;
     this.state = 'count';
     this.stateT = 0;
     const chinFrac = target.def.chin / 10;
@@ -504,6 +523,7 @@ class Game {
       f.round = { landed: 0, thrown: 0, dmg: 0 };
     }
     this.buffer = null;
+    this.laneBuffer = null;
     this.state = 'rest';
     this.stateT = 0;
   }
@@ -545,6 +565,7 @@ class Game {
     this.o.ai.comboQueue = [];
     this.o.ai.cd = 0.6;
     this.buffer = null;
+    this.laneBuffer = null;
     this.count = null;
     this.state = 'fighting';
     this.stateT = 0;
@@ -564,6 +585,7 @@ class Game {
         this.updateFighter(this.p, this.o, dt);
         if (this.state !== 'fighting') break; // knockdown/finish mid-update
         this.drainBuffer(dt);
+        this.drainLaneBuffer(dt);
         this.updateFighter(this.o, this.p, dt);
         if (this.state !== 'fighting') break;
         this.separate(dt);
