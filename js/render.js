@@ -458,11 +458,8 @@ class Renderer {
     ctx.beginPath();
     ctx.ellipse(headX, headY, 21 * (1 + sq * 0.28), 21 * (1 - sq * 0.3), 0, 0, Math.PI * 2);
     ctx.fill();
-    // Hair cap
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.beginPath();
-    ctx.arc(headX, headY - 3, 21, Math.PI * 1.05, Math.PI * 1.95);
-    ctx.fill();
+    // Hair
+    this.drawHair(ctx, def, headX, headY, dir);
     // Ear
     ctx.fillStyle = def.skin;
     ctx.beginPath();
@@ -530,6 +527,70 @@ class Renderer {
     // pre-fall-rotation approximation is fine for effects)
     const toWorld = (px, py) => ({ x: x + (px - x) * lS, y: lY + (py - FLOOR_Y) * lS });
     this.anchors[key] = { head: toWorld(headX, headY), chest: toWorld(shoX, shoY + 30) };
+  }
+
+  // Draws entirely in head-local space (relative to headX/headY) so it
+  // inherits the caller's squash, fall-rotation, and lane-depth transforms
+  // for free. No swing/physics — every style is rigidly attached.
+  drawHair(ctx, def, headX, headY, dir) {
+    const hair = def.hair || 'short';
+    const color = def.hairColor || '#1a1a1a';
+    ctx.fillStyle = color;
+
+    if (hair === 'bald') {
+      // No hair shape — just a faint shine highlight on the crown
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(headX - dir * 4, headY - 14, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    if (hair === 'short') {
+      // Original hair-cap look
+      ctx.beginPath();
+      ctx.arc(headX, headY - 3, 21, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.fill();
+      return;
+    }
+
+    if (hair === 'afro') {
+      // Larger rounded silhouette, bigger than the skull, centered slightly back
+      ctx.beginPath();
+      ctx.ellipse(headX - dir * 2, headY - 8, 27, 25, 0, Math.PI * 0.95, Math.PI * 2.05);
+      ctx.fill();
+      return;
+    }
+
+    if (hair === 'mohawk') {
+      // Narrow vertical strip along the top-center of the head
+      ctx.beginPath();
+      ctx.moveTo(headX - 4, headY - 8);
+      ctx.lineTo(headX - 3, headY - 26);
+      ctx.lineTo(headX + 3, headY - 26);
+      ctx.lineTo(headX + 4, headY - 8);
+      ctx.closePath();
+      ctx.fill();
+      return;
+    }
+
+    if (hair === 'long') {
+      // Hair cap plus a static ponytail trailing from the back of the head
+      ctx.beginPath();
+      ctx.arc(headX, headY - 3, 21, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.fill();
+      const backX = headX - dir * 16;
+      ctx.beginPath();
+      ctx.moveTo(backX, headY - 8);
+      ctx.quadraticCurveTo(backX - dir * 10, headY + 20, backX - dir * 4, headY + 46);
+      ctx.quadraticCurveTo(backX - dir * 1, headY + 24, backX + dir * 4, headY - 4);
+      ctx.closePath();
+      ctx.fill();
+      return;
+    }
   }
 
   // Punch extension 0..1 across windup/active/recover, with a chamber pull-back.
