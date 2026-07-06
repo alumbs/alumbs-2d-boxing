@@ -606,6 +606,13 @@ class Game {
         c.t += dt;
         c.downed.stateT += dt;
         this.updateFighterPassive(c.standing, dt);
+        // The fighter who scored the knockdown is resting in a neutral
+        // corner too — same idle regen rate as normal idle recovery.
+        {
+          const s = c.standing;
+          const regenBase = 4.5 + s.def.stamina * 0.55;
+          s.stamina = Math.min(s.maxStamina, s.stamina + regenBase * dt);
+        }
         while (c.t >= COUNT_TICK) {
           c.t -= COUNT_TICK;
           c.num++;

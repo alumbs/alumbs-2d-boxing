@@ -52,6 +52,8 @@ stamina. Gassed punches hit like pillows. **Getting knocked down isn't a
 total loss** — you recover 10% of your stamina for every count that ticks
 by (a 6-count back on your feet = 60% of your wind back), so a fresh
 knockdown while gassed is a chance to recover, not just a countdown. The
+fighter who scored the knockdown is resting in a neutral corner too and
+recovers stamina at the normal idle rate for as long as the count runs. The
 roster is ordered weakest to strongest — start at the top of the list if
 you're getting hurt.
 
