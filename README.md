@@ -3,9 +3,10 @@
 A mobile-first, side-view 2D boxing game. Pure HTML/CSS/JS + Canvas — no build
 step, no dependencies, no backend.
 
-**Play:** **Career** — create your own fighter (name, colors, style, stat
-budget) and climb the rankings ladder from unranked to Undisputed Champion;
-wins earn skill points to spend on your stats. Record saved in your browser.
+**Play:** **Career** — create your own fighter (name, colors, hairstyle,
+style, stat budget) and climb the rankings ladder from unranked to
+Undisputed Champion; wins earn skill points to spend on your stats. Record
+saved in your browser.
 **Exhibition** — any fighter vs any opponent. **Training** — pick a sparring
 partner and drill with no clock: DUMMY stands there, DEFEND only blocks and
 slips, SPAR fights back; damage numbers show on every landed punch. Fights
