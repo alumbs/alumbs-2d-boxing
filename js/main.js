@@ -24,7 +24,11 @@
     try {
       const c = JSON.parse(localStorage.getItem(CAREER_KEY));
       if (!c) return null;
-      if (c.v === 2 && c.fighter) return c;
+      if (c.v === 2 && c.fighter) {
+        if (!c.fighter.hair) c.fighter.hair = 'short';
+        if (!c.fighter.hairColor) c.fighter.hairColor = '#1a1a1a';
+        return c;
+      }
       const def = FIGHTERS.find(f => f.id === c.fighterId);
       if (def) {
         return { v: 2, fighter: { ...def }, stage: c.stage || 0, w: c.w || 0, l: c.l || 0, ko: c.ko || 0, sp: 0 };
@@ -109,6 +113,8 @@
   // ---------------- Create a fighter ----------------
   const CF_FLAGS = ['🇳🇬', '🇺🇸', '🇬🇧', '🇯🇲', '🇲🇽', '🇯🇵', '🇮🇹', '🇮🇪', '🇰🇷', '🇺🇦', '🇧🇷', '🇵🇭'];
   const CF_SKINS = ['#f0c8a0', '#e8b088', '#d9a071', '#b57e52', '#8d5524', '#6b4423'];
+  const CF_HAIR = HAIR_STYLES;
+  const CF_HAIR_COLORS = HAIR_COLORS;
   const CF_COLORS = ['#c0392b', '#1550a0', '#0f7a3d', '#7d2ea0', '#111111', '#e0a800', '#f5f5f5', '#ff6b35'];
   const CF_STYLES = ['slugger', 'out-boxer', 'pressure', 'counter'];
   const CF_STATS = [['power', 'PWR'], ['speed', 'SPD'], ['chin', 'CHN'], ['stamina', 'STA'], ['recovery', 'REC']];
@@ -118,6 +124,7 @@
   function showCreate() {
     cf = {
       flag: CF_FLAGS[0], skin: CF_SKINS[2], trunks: CF_COLORS[0], gloves: CF_COLORS[1],
+      hair: CF_HAIR[1], hairColor: CF_HAIR_COLORS[0],
       style: CF_STYLES[0],
       stats: { power: 3, speed: 3, chin: 3, stamina: 3, recovery: 3 },
     };
@@ -125,6 +132,8 @@
     $('cf-nick').value = '';
     renderSwatches('cf-flags', CF_FLAGS, v => cf.flag === v, v => { cf.flag = v; }, v => v);
     renderSwatches('cf-skins', CF_SKINS, v => cf.skin === v, v => { cf.skin = v; });
+    renderSwatches('cf-hair', CF_HAIR, v => cf.hair === v, v => { cf.hair = v; }, v => v.toUpperCase());
+    renderSwatches('cf-hair-colors', CF_HAIR_COLORS, v => cf.hairColor === v, v => { cf.hairColor = v; });
     renderSwatches('cf-trunks', CF_COLORS, v => cf.trunks === v, v => { cf.trunks = v; });
     renderSwatches('cf-gloves', CF_COLORS, v => cf.gloves === v, v => { cf.gloves = v; });
     renderSwatches('cf-styles', CF_STYLES, v => cf.style === v, v => { cf.style = v; }, v => v.toUpperCase());
@@ -184,6 +193,7 @@
       ...cf.stats,
       style: cf.style,
       skin: cf.skin, trunks: cf.trunks, gloves: cf.gloves,
+      hair: cf.hair, hairColor: cf.hairColor,
     };
     saveCareer({ v: 2, fighter: def, stage: 0, w: 0, l: 0, ko: 0, sp: 0 });
     showCareerHub();
