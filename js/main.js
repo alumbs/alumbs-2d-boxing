@@ -14,6 +14,7 @@
   let resultShownAt = null;
   let resultApplied = false;
   let hitstopT = 0;
+  let paused = false;
 
   // ---------------- Career persistence ----------------
   // v2: { v: 2, fighter: <def>, stage, w, l, ko, sp }. v1 saves (fighterId)
@@ -351,6 +352,7 @@
     resultShownAt = null;
     resultApplied = false;
     hitstopT = 0;
+    paused = false;
     bannerQueue = [];
     bannerUntil = 0;
     $('hud-p-name').textContent = playerDef.nick.toUpperCase();
@@ -358,6 +360,7 @@
     $('result-panel').classList.add('hidden');
     $('rest-panel').classList.add('hidden');
     $('count-overlay').classList.add('hidden');
+    $('pause-overlay').classList.add('hidden');
     $('training-bar').classList.toggle('hidden', !training);
     if (training) setSparButtons('spar');
     show('screen-fight');
@@ -385,6 +388,31 @@
   $('btn-rematch').addEventListener('click', () => { audio.ensure(); startFight(); });
   $('btn-continue').addEventListener('click', showCareerHub);
   $('btn-menu').addEventListener('click', showMenu);
+
+  // ---------------- Pause ----------------
+  // Purely a UI/loop concern — the Game's own state machine (intro/fighting/
+  // count/rest/over) never sees this, so nothing resumes mid-punch wrong.
+  function setPaused(v) {
+    if (!game || game.state === 'over') return;
+    paused = v;
+    $('pause-overlay').classList.toggle('hidden', !paused);
+    if (paused) {
+      // Freeze cleanly: drop movement/guard so keys held or released during
+      // the pause don't leave stale drift or a stuck block once resumed
+      game.setMove(0);
+      game.setGuard(null);
+      if (window.speechSynthesis) speechSynthesis.cancel();
+    }
+  }
+  $('btn-pause').addEventListener('click', () => { audio.ensure(); setPaused(!paused); });
+  $('btn-resume').addEventListener('click', () => setPaused(false));
+  $('btn-pause-menu').addEventListener('click', () => { paused = false; showMenu(); });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && game && game.state !== 'over') setPaused(!paused);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && game && game.state !== 'over') setPaused(true);
+  });
 
   // ---------------- Training bar ----------------
   function setSparButtons(modeName) {
@@ -622,8 +650,16 @@
     requestAnimationFrame(loop);
     const dt = Math.min(0.05, (now - lastTime) / 1000 || 0.016);
     lastTime = now;
+    if (!game) { audio.update(dt); return; }
+
+    if (paused) {
+      // World holds still; audio settles to quiet so the pause is fully silent
+      audio.excitement = Math.max(0, (audio.excitement || 0) - dt);
+      audio.update(dt);
+      renderer.draw(game, 0);
+      return;
+    }
     audio.update(dt);
-    if (!game) return;
 
     if (hitstopT > 0) {
       // Impact freeze: the world holds its breath for a few frames
@@ -641,7 +677,7 @@
   }
 
   // ---------------- Boot ----------------
-  bindInput(() => game, () => audio.ensure());
+  bindInput(() => (paused ? null : game), () => audio.ensure());
   if (window.matchMedia('(pointer: fine)').matches) {
     $('key-hint').classList.remove('hidden');
   }

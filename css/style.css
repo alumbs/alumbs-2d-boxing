@@ -229,6 +229,26 @@ html, body {
 }
 .tb-btn.active { background: var(--accent); color: #fff; }
 .tb-btn.alt { background: #1c2130; color: var(--muted); }
+
+/* ============ PAUSE ============ */
+.pause-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(8, 10, 16, 0.6);
+  color: var(--text);
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pause-btn:active { background: rgba(8, 10, 16, 0.85); }
+#pause-overlay h3 { color: var(--accent2); }
 .rest-advice { font-size: 14px; color: var(--accent2); font-style: italic; max-width: 46ch; }
 
 /* ============ SELECT ============ */

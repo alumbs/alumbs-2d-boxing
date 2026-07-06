@@ -111,10 +111,15 @@ function bindInput(getGame, onAnyGesture) {
     }
   });
   window.addEventListener('keyup', e => {
-    const g = getGame();
-    if (!g) return;
+    // Always sync local key state on release, even with no live game (e.g.
+    // paused) — otherwise a key let go mid-pause leaves stale movement/guard
+    // state that reasserts itself the moment play resumes.
     const k = e.key.toLowerCase();
     if (keyGuard[k]) popZone(keyGuard[k]);
-    else if (k === 'a' || k === 'd') { moveKeys[k] = false; syncMove(g); }
+    else if (k === 'a' || k === 'd') {
+      moveKeys[k] = false;
+      const g = getGame();
+      if (g) syncMove(g);
+    }
   });
 }
