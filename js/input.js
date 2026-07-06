@@ -61,6 +61,17 @@ function bindInput(getGame, onAnyGesture) {
     () => { const g = getGame(); if (g) g.setMove(1); },
     () => { const g = getGame(); if (g && g.p.moveDir > 0) g.setMove(0); });
 
+  // Lane steps (tap)
+  for (const [id, d] of [['btn-lane-up', -1], ['btn-lane-down', 1]]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      onAnyGesture();
+      const g = getGame();
+      if (g) g.laneStep(d);
+    });
+  }
+
   const riseBtn = document.getElementById('btn-rise');
   if (riseBtn) riseBtn.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -74,8 +85,10 @@ function bindInput(getGame, onAnyGesture) {
   if (controls) controls.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
 
   // --- Keyboard ---
+  // A/D move · W/S step between lanes · Q lean · E weave
+  // Space high block · X low block · C duck
   const keyPunch = { j: 'jab', k: 'cross', l: 'hook', i: 'uppercut', m: 'body' };
-  const keyGuard = { s: 'high', x: 'low', c: 'duck', ' ': 'high' };
+  const keyGuard = { x: 'low', c: 'duck', ' ': 'high' };
   const moveKeys = { a: false, d: false };
   const syncMove = g => g.setMove(moveKeys.d ? 1 : moveKeys.a ? -1 : 0);
 
@@ -87,7 +100,9 @@ function bindInput(getGame, onAnyGesture) {
     const k = e.key.toLowerCase();
     if (keyPunch[k]) { g.pressPunch(keyPunch[k]); e.preventDefault(); }
     else if (k === 'a' || k === 'd') { moveKeys[k] = true; syncMove(g); e.preventDefault(); }
-    else if (k === 'w') { g.dodge('lean'); e.preventDefault(); }
+    else if (k === 'w' || k === 'arrowup') { g.laneStep(-1); e.preventDefault(); }
+    else if (k === 's' || k === 'arrowdown') { g.laneStep(1); e.preventDefault(); }
+    else if (k === 'q') { g.dodge('lean'); e.preventDefault(); }
     else if (k === 'e') { g.dodge('weave'); e.preventDefault(); }
     else if (keyGuard[k]) {
       if (k === ' ' && g.state === 'count') g.riseTap();

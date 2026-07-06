@@ -79,6 +79,156 @@ html, body {
   letter-spacing: 2px;
 }
 .select-back { align-self: center; margin-top: 16px; }
+
+/* ============ CREATE A FIGHTER ============ */
+#screen-create {
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  height: 100vh;
+  height: 100dvh;
+}
+.create-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(440px, 94%);
+  margin: 0 auto;
+}
+.create-row { display: flex; align-items: center; gap: 12px; }
+.create-row label {
+  width: 76px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--muted);
+  flex: none;
+}
+.create-row input {
+  flex: 1;
+  background: var(--panel);
+  border: 2px solid #262c3d;
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 10px 12px;
+  outline: none;
+}
+.create-row input:focus { border-color: var(--accent); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 2px solid #262c3d;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  padding: 0;
+}
+.swatch.text { width: auto; padding: 0 10px; font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--text); font-family: inherit; }
+.swatch.sel { border-color: var(--accent2); box-shadow: 0 0 8px rgba(255, 210, 77, 0.4); }
+.stat-pool { font-size: 13px; color: var(--muted); letter-spacing: 1px; }
+.stat-pool b { color: var(--accent2); }
+#cf-stats { display: flex; flex-direction: column; gap: 6px; }
+.cf-stat { display: flex; align-items: center; gap: 10px; }
+.cf-stat .cf-label { width: 76px; font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 1px; flex: none; }
+.cf-stat .stat-bar { flex: 1; height: 10px; }
+.cf-stat button {
+  width: 34px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: #2a3147;
+  color: var(--text);
+  font-weight: 900;
+  font-size: 16px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cf-stat button:disabled { opacity: 0.3; cursor: default; }
+.cf-stat .cf-val { width: 22px; text-align: center; font-weight: 800; font-size: 14px; }
+.create-btns { margin-top: 8px; }
+.create-btns .big-btn { flex: 1; }
+
+/* ============ RANKINGS ============ */
+.rankings {
+  width: 100%;
+  max-height: 32vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 2px solid #262c3d;
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+.rank-row .rank-num { width: 34px; font-weight: 900; color: var(--muted); }
+.rank-row .rank-name { flex: 1; font-weight: 700; }
+.rank-row .rank-rating { color: var(--accent2); font-size: 12px; font-weight: 700; }
+.rank-row.beaten { opacity: 0.45; }
+.rank-row.beaten .rank-name { text-decoration: line-through; }
+.rank-row.you { background: rgba(255, 107, 53, 0.16); border: 1px solid var(--accent); }
+.rank-row.you .rank-name { color: var(--accent); }
+.rank-row.next .rank-name { color: var(--accent2); }
+.rank-row.champ .rank-num { color: var(--accent2); }
+
+/* Skill points */
+.career-sp {
+  width: 100%;
+  background: var(--panel);
+  border: 2px solid #262c3d;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.career-sp .sp-title { font-size: 12px; font-weight: 800; letter-spacing: 2px; color: var(--accent2); }
+
+/* ============ TRAINING BAR ============ */
+.training-bar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: rgba(8, 10, 16, 0.7);
+  border-radius: 12px;
+  padding: 6px 10px;
+  z-index: 5;
+}
+.tb-label { font-size: 11px; font-weight: 900; letter-spacing: 2px; color: var(--muted); }
+.tb-btn {
+  border: none;
+  border-radius: 8px;
+  background: #2a3147;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.tb-btn.active { background: var(--accent); color: #fff; }
+.tb-btn.alt { background: #1c2130; color: var(--muted); }
 .rest-advice { font-size: 14px; color: var(--accent2); font-style: italic; max-width: 46ch; }
 
 /* ============ SELECT ============ */

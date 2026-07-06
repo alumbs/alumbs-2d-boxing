@@ -4,6 +4,12 @@
 const CW = 900, CH = 500;
 const FLOOR_Y = 458;
 
+// Lane depth: laneF 0 (far) → 2 (near). Fighters shrink and rise with depth.
+const LANE_FAR_Y = 392, LANE_NEAR_Y = 458;
+const LANE_FAR_S = 0.82, LANE_NEAR_S = 1.0;
+function laneFloorY(laneF) { return lerp(LANE_FAR_Y, LANE_NEAR_Y, laneF / 2); }
+function laneScale(laneF) { return lerp(LANE_FAR_S, LANE_NEAR_S, laneF / 2); }
+
 function lerp(a, b, t) { return a + (b - a) * t; }
 function ease(t) { return t * t * (3 - 2 * t); }
 
@@ -19,6 +25,10 @@ class Renderer {
     this.squash = { p: 0, o: 0 };
     this.anchors = { p: { head: { x: 360, y: 246 } }, o: { head: { x: 540, y: 246 } } };
     this.crowd = this.makeCrowd();
+    this.vignette = this.makeVignette();
+    this.camX = 450;   // dynamic camera: smoothed focus + zoom
+    this.camZ = 1;
+    this.camFlashes = []; // crowd camera flashes
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -57,6 +67,18 @@ class Renderer {
       g.fillStyle = lg;
       g.fillRect(0, 0, CW, 350);
     }
+    return c;
+  }
+
+  makeVignette() {
+    const c = document.createElement('canvas');
+    c.width = CW; c.height = CH;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(CW / 2, CH / 2 - 30, 240, CW / 2, CH / 2, 640);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, CW, CH);
     return c;
   }
 
@@ -102,18 +124,38 @@ class Renderer {
       ctx.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
     }
 
-    this.drawRing(ctx);
+    // Dynamic camera: drift toward the fighters, zoom in when they close
+    const k = Math.min(1, dt * 3);
+    if (game) {
+      const mid = (game.p.x + game.o.x) / 2;
+      const spread = Math.abs(game.p.x - game.o.x);
+      const tz = Math.min(1.14, Math.max(1, 1.18 - spread / 1400));
+      this.camZ += (tz - this.camZ) * k;
+      this.camX += (Math.min(570, Math.max(330, mid)) - this.camX) * k;
+    } else {
+      this.camZ += (1 - this.camZ) * k;
+    }
+    ctx.save();
+    ctx.translate(this.camX, 350);
+    ctx.scale(this.camZ, this.camZ);
+    ctx.translate(-this.camX, -350);
+
+    this.drawRing(ctx, dt);
 
     if (game) {
-      const px = game.p.x, ox = game.o.x;
-      // Draw the currently-attacking fighter on top
-      const pActive = game.p.state === 'punch';
-      if (pActive) {
-        this.drawBoxer(ctx, game.o, ox, -1, px, 'o');
-        this.drawBoxer(ctx, game.p, px, 1, ox, 'p');
-      } else {
-        this.drawBoxer(ctx, game.p, px, 1, ox, 'p');
-        this.drawBoxer(ctx, game.o, ox, -1, px, 'o');
+      // Far lane draws first; within a lane the attacker draws on top
+      const order = [['p', game.p, game.o], ['o', game.o, game.p]].sort((a, b) =>
+        (a[1].laneF - b[1].laneF) || ((a[1].state === 'punch' ? 1 : 0) - (b[1].state === 'punch' ? 1 : 0)));
+      for (const [key, f, opp] of order) this.drawBoxer(ctx, f, f.x, f.dir, opp.x, key);
+      // Sweat drips off a gassed fighter
+      for (const [key, f] of [['p', game.p], ['o', game.o]]) {
+        if (f.stamina < 30 && Math.random() < dt * 2.5) {
+          const a = this.anchors[key].head;
+          this.sparks.push({
+            x: a.x + (Math.random() - 0.5) * 22, y: a.y - 6,
+            vx: (Math.random() - 0.5) * 50, vy: -30, life: 0.4, color: '#9fd8ff',
+          });
+        }
       }
     }
 
@@ -148,7 +190,12 @@ class Renderer {
       ctx.globalAlpha = 1;
     }
 
-    // White flash (knockdowns)
+    this.drawForeground(ctx);
+
+    ctx.restore(); // camera
+
+    // Vignette + knockdown flash sit outside the camera so they hug the frame
+    ctx.drawImage(this.vignette, 0, 0);
     if (this.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${this.flash * 0.6})`;
       ctx.fillRect(0, 0, CW, CH);
@@ -158,9 +205,25 @@ class Renderer {
     ctx.restore();
   }
 
-  drawRing(ctx) {
-    // Crowd backdrop
-    ctx.drawImage(this.crowd, 0, 0);
+  drawRing(ctx, dt) {
+    // Crowd backdrop, gently breathing
+    ctx.drawImage(this.crowd, 0, Math.sin(this.t * 1.4) * 2 - 2);
+
+    // Camera flashes popping in the stands
+    if (Math.random() < dt * 2.2) {
+      this.camFlashes.push({ x: 40 + Math.random() * (CW - 80), y: 50 + Math.random() * 220, life: 0.28 });
+    }
+    for (let i = this.camFlashes.length - 1; i >= 0; i--) {
+      const f = this.camFlashes[i];
+      f.life -= dt;
+      if (f.life <= 0) { this.camFlashes.splice(i, 1); continue; }
+      ctx.globalAlpha = Math.min(1, f.life * 5);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 2.5 + f.life * 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
 
     // Ring floor
     const grad = ctx.createLinearGradient(0, 330, 0, CH);
@@ -188,17 +251,31 @@ class Renderer {
     ctx.fillStyle = '#822';
     ctx.font = 'bold 26px "Arial Black", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('ALUMBS BOXING', 450, 462);
+    ctx.fillText('ALUMBS BOXING', 450, 430);
     ctx.restore();
 
-    // Posts
+    // Lane guides: faint seams in the canvas hinting at the three lanes
+    ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+    ctx.lineWidth = 2;
+    for (const y of [LANE_FAR_Y + 14, laneFloorY(1) + 14]) {
+      const t = (y - 350) / 150;
+      ctx.beginPath();
+      ctx.moveTo(lerp(60, 0, t), y);
+      ctx.lineTo(lerp(840, 900, t), y);
+      ctx.stroke();
+    }
+
+    // Back posts
     for (const [x, col] of [[52, '#b03030'], [848, '#3050b0']]) {
       ctx.fillStyle = col;
       ctx.fillRect(x - 7, 160, 14, 195);
       ctx.fillStyle = 'rgba(255,255,255,0.25)';
       ctx.fillRect(x - 7, 160, 5, 195);
+      // Turnbuckle pad
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillRect(x - 9, 185, 18, 8);
     }
-    // Ropes
+    // Back ropes
     const ropeCols = ['#d84040', '#f0f0f0', '#4060d8'];
     for (let i = 0; i < 3; i++) {
       const y = 190 + i * 52;
@@ -208,6 +285,42 @@ class Renderer {
       ctx.moveTo(52, y);
       ctx.quadraticCurveTo(450, y + 8, 848, y);
       ctx.stroke();
+      // Side ropes running toward the camera
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(52, y);
+      ctx.lineTo(6, y + 105 + i * 40);
+      ctx.moveTo(848, y);
+      ctx.lineTo(894, y + 105 + i * 40);
+      ctx.stroke();
+    }
+    // Corner stools
+    for (const [x, col] of [[30, '#8a2424'], [870, '#24308a']]) {
+      ctx.fillStyle = col;
+      ctx.fillRect(x - 15, 470, 30, 8);
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(x - 11, 478, 5, 18);
+      ctx.fillRect(x + 6, 478, 5, 18);
+    }
+  }
+
+  // Near-side ropes drawn OVER the fighters — translucent so they read as
+  // depth without hiding the action.
+  drawForeground(ctx) {
+    const ropeCols = ['rgba(216,64,64,0.30)', 'rgba(240,240,240,0.26)', 'rgba(64,96,216,0.30)'];
+    const ropeYs = [402, 450, 498];
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = ropeCols[i];
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(6, ropeYs[i]);
+      ctx.quadraticCurveTo(450, ropeYs[i] + 18, 894, ropeYs[i]);
+      ctx.stroke();
+    }
+    // Front posts
+    for (const [x, col] of [[6, 'rgba(176,48,48,0.35)'], [894, 'rgba(48,80,176,0.35)']]) {
+      ctx.fillStyle = col;
+      ctx.fillRect(x - 9, 300, 18, 200);
     }
   }
 
@@ -255,6 +368,15 @@ class Renderer {
     }
 
     ctx.save();
+
+    // Lane depth: shift the whole figure to its lane's floor and shrink it.
+    // All drawing below stays in the original near-lane coordinate space.
+    const laneF = f.laneF !== undefined ? f.laneF : 2;
+    const lY = laneFloorY(laneF);
+    const lS = laneScale(laneF);
+    ctx.translate(x, lY);
+    ctx.scale(lS, lS);
+    ctx.translate(-x, -FLOOR_Y);
 
     // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -404,8 +526,10 @@ class Renderer {
 
     ctx.restore();
 
-    // Save anchors (pre-fall-rotation approximation is fine for effects)
-    this.anchors[key] = { head: { x: headX, y: headY }, chest: { x: shoX, y: shoY + 30 } };
+    // Save anchors in world space (apply the lane transform by hand;
+    // pre-fall-rotation approximation is fine for effects)
+    const toWorld = (px, py) => ({ x: x + (px - x) * lS, y: lY + (py - FLOOR_Y) * lS });
+    this.anchors[key] = { head: toWorld(headX, headY), chest: toWorld(shoX, shoY + 30) };
   }
 
   // Punch extension 0..1 across windup/active/recover, with a chamber pull-back.

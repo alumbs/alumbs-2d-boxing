@@ -3,21 +3,33 @@
 A mobile-first, side-view 2D boxing game. Pure HTML/CSS/JS + Canvas — no build
 step, no dependencies, no backend.
 
-**Play:** **Career** — pick your fighter and climb the whole roster, record
-saved in your browser, become Undisputed Champion. **Exhibition** — any
-fighter vs any opponent. Fights go up to 10 rounds; win by KO, TKO
-(3 knockdowns in a round) or the judges' scorecards.
+**Play:** **Career** — create your own fighter (name, colors, style, stat
+budget) and climb the rankings ladder from unranked to Undisputed Champion;
+wins earn skill points to spend on your stats. Record saved in your browser.
+**Exhibition** — any fighter vs any opponent. **Training** — pick a sparring
+partner and drill with no clock: DUMMY stands there, DEFEND only blocks and
+slips, SPAR fights back; damage numbers show on every landed punch. Fights
+go up to 10 rounds; win by KO, TKO (3 knockdowns in a round) or the judges'
+scorecards.
 
 ## Controls
 
-**Touch (mobile):** left cluster = ◀ ▶ move (hold), LEAN, WEAVE, BLOCK ▲
-high guard (hold), BLOCK ▼ low guard (hold), DUCK (hold). Right cluster =
-JAB / CROSS / HOOK / UPPER / BODY. When you're knocked down, mash the TAP
-button to beat the count — later knockdowns need more mashing.
+**Touch (mobile):** left cluster = ◀ ▶ move (hold), ▲ ▼ switch lane (tap),
+LEAN, WEAVE, BLOCK ▲ high guard (hold), BLOCK ▼ low guard (hold), DUCK
+(hold). Right cluster = JAB / CROSS / HOOK / UPPER / BODY. When you're
+knocked down, mash the TAP button to beat the count — later knockdowns need
+more mashing.
 
-**Keyboard:** `A`/`D` move · `W` lean · `E` weave · `S`/`Space` high block ·
-`X` low block · `C` duck (all guards are hold) · `J` jab · `K` cross · `L`
-hook · `I` uppercut · `M` body · mash `Space` to get up.
+**Keyboard:** `A`/`D` move · `W`/`S` switch lane · `Q` lean · `E` weave ·
+`Space` high block · `X` low block · `C` duck (all guards are hold) · `J`
+jab · `K` cross · `L` hook · `I` uppercut · `M` body · mash `Space` to get
+up.
+
+**The ring has three lanes** (near, mid, far). Punches only land when both
+fighters are in the same lane — stepping lanes at the right moment side-steps
+a punch and opens a counter window, and a free lane lets you circle right
+around your opponent to switch sides or escape a corner. The AI hunts your
+lane, and slick fighters will side-step you too.
 
 **Tips:** watch the opponent's glove — a pulsing yellow ring means a punch is
 coming; guard or dodge it. **High guard stops head shots but leaks body

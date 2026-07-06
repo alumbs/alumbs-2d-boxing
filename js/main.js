@@ -7,7 +7,7 @@
   const renderer = new Renderer(canvas);
 
   let game = null;
-  let mode = 'exhibition';   // 'exhibition' | 'career'
+  let mode = 'exhibition';   // 'exhibition' | 'career' | 'training'
   let playerDef = null;
   let oppDef = null;
   let lastTime = 0;
@@ -16,11 +16,18 @@
   let hitstopT = 0;
 
   // ---------------- Career persistence ----------------
+  // v2: { v: 2, fighter: <def>, stage, w, l, ko, sp }. v1 saves (fighterId)
+  // migrate to a copy of the preset def on load.
   const CAREER_KEY = 'alumbs-career-v1';
   function loadCareer() {
     try {
       const c = JSON.parse(localStorage.getItem(CAREER_KEY));
-      if (c && FIGHTERS.some(f => f.id === c.fighterId)) return c;
+      if (!c) return null;
+      if (c.v === 2 && c.fighter) return c;
+      const def = FIGHTERS.find(f => f.id === c.fighterId);
+      if (def) {
+        return { v: 2, fighter: { ...def }, stage: c.stage || 0, w: c.w || 0, l: c.l || 0, ko: c.ko || 0, sp: 0 };
+      }
     } catch (e) { /* corrupt save */ }
     return null;
   }
@@ -31,11 +38,11 @@
     try { localStorage.removeItem(CAREER_KEY); } catch (e) { /* ignore */ }
   }
   function careerOpponents(c) {
-    return FIGHTERS.filter(f => f.id !== c.fighterId); // roster is already weakest → strongest
+    return FIGHTERS.filter(f => f.id !== c.fighter.id); // roster is already weakest → strongest
   }
 
   // ---------------- Screens ----------------
-  const screens = ['screen-menu', 'screen-career', 'screen-select', 'screen-fight'];
+  const screens = ['screen-menu', 'screen-career', 'screen-create', 'screen-select', 'screen-fight'];
   function show(id) {
     for (const s of screens) $(s).classList.toggle('hidden', s !== id);
     if (id !== 'screen-fight') game = null;
@@ -58,13 +65,18 @@
   }
 
   // ---------------- Menu ----------------
+  function careerRank(c) {
+    const n = careerOpponents(c).length;
+    if (c.stage >= n) return 'CHAMPION';
+    if (c.stage === 0) return 'UNRANKED';
+    return `RANKED #${n - c.stage + 1}`;
+  }
+
   function showMenu() {
     const c = loadCareer();
     const sum = $('career-summary');
     if (c) {
-      const def = FIGHTERS.find(f => f.id === c.fighterId);
-      const opps = careerOpponents(c);
-      sum.textContent = `${def.nick} · ${c.w}-${c.l} (${c.ko} KO) · ${Math.min(c.stage, opps.length)}/${opps.length} beaten`;
+      sum.textContent = `${c.fighter.nick} · ${c.w}-${c.l} (${c.ko} KO) · ${careerRank(c)}`;
       sum.classList.remove('hidden');
     } else {
       sum.classList.add('hidden');
@@ -75,7 +87,7 @@
   $('btn-career').addEventListener('click', () => {
     audio.ensure();
     if (loadCareer()) showCareerHub();
-    else { renderGrid('career'); $('select-title').textContent = 'CHOOSE YOUR FIGHTER'; show('screen-select'); }
+    else showCreate();
   });
   $('btn-exhibition').addEventListener('click', () => {
     audio.ensure();
@@ -84,28 +96,172 @@
     $('select-title').textContent = 'CHOOSE YOUR FIGHTER';
     show('screen-select');
   });
+  $('btn-training').addEventListener('click', () => {
+    audio.ensure();
+    playerDef = null;
+    renderGrid('t-player');
+    $('select-title').textContent = 'CHOOSE YOUR FIGHTER';
+    show('screen-select');
+  });
   $('btn-select-back').addEventListener('click', showMenu);
+
+  // ---------------- Create a fighter ----------------
+  const CF_FLAGS = ['🇳🇬', '🇺🇸', '🇬🇧', '🇯🇲', '🇲🇽', '🇯🇵', '🇮🇹', '🇮🇪', '🇰🇷', '🇺🇦', '🇧🇷', '🇵🇭'];
+  const CF_SKINS = ['#f0c8a0', '#e8b088', '#d9a071', '#b57e52', '#8d5524', '#6b4423'];
+  const CF_COLORS = ['#c0392b', '#1550a0', '#0f7a3d', '#7d2ea0', '#111111', '#e0a800', '#f5f5f5', '#ff6b35'];
+  const CF_STYLES = ['slugger', 'out-boxer', 'pressure', 'counter'];
+  const CF_STATS = [['power', 'PWR'], ['speed', 'SPD'], ['chin', 'CHN'], ['stamina', 'STA'], ['recovery', 'REC']];
+  const CF_POOL = 14;
+  let cf = null;
+
+  function showCreate() {
+    cf = {
+      flag: CF_FLAGS[0], skin: CF_SKINS[2], trunks: CF_COLORS[0], gloves: CF_COLORS[1],
+      style: CF_STYLES[0],
+      stats: { power: 3, speed: 3, chin: 3, stamina: 3, recovery: 3 },
+    };
+    $('cf-name').value = '';
+    $('cf-nick').value = '';
+    renderSwatches('cf-flags', CF_FLAGS, v => cf.flag === v, v => { cf.flag = v; }, v => v);
+    renderSwatches('cf-skins', CF_SKINS, v => cf.skin === v, v => { cf.skin = v; });
+    renderSwatches('cf-trunks', CF_COLORS, v => cf.trunks === v, v => { cf.trunks = v; });
+    renderSwatches('cf-gloves', CF_COLORS, v => cf.gloves === v, v => { cf.gloves = v; });
+    renderSwatches('cf-styles', CF_STYLES, v => cf.style === v, v => { cf.style = v; }, v => v.toUpperCase());
+    renderCfStats();
+    show('screen-create');
+  }
+
+  // Each swatch group re-renders itself on pick so the selection ring moves
+  function renderSwatches(id, values, isSel, pick, label) {
+    const box = $(id);
+    box.innerHTML = '';
+    for (const v of values) {
+      const b = document.createElement('button');
+      b.className = 'swatch' + (label ? ' text' : '') + (isSel(v) ? ' sel' : '');
+      if (label) b.textContent = label(v);
+      else b.style.background = v;
+      b.addEventListener('click', () => { pick(v); renderSwatches(id, values, isSel, pick, label); });
+      box.appendChild(b);
+    }
+  }
+
+  function cfPoolLeft() {
+    return CF_POOL - CF_STATS.reduce((s, [k]) => s + cf.stats[k] - 3, 0);
+  }
+
+  function renderCfStats() {
+    const box = $('cf-stats');
+    const pool = cfPoolLeft();
+    $('cf-pool').textContent = pool;
+    box.innerHTML = '';
+    for (const [key, label] of CF_STATS) {
+      const v = cf.stats[key];
+      const row = document.createElement('div');
+      row.className = 'cf-stat';
+      row.innerHTML = `
+        <span class="cf-label">${label}</span>
+        <button data-d="-1" ${v <= 1 ? 'disabled' : ''}>−</button>
+        <span class="cf-val">${v}</span>
+        <button data-d="1" ${v >= 10 || pool <= 0 ? 'disabled' : ''}>+</button>
+        <div class="stat-bar"><div style="width:${v * 10}%"></div></div>`;
+      row.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+        cf.stats[key] = Math.max(1, Math.min(10, v + Number(b.dataset.d)));
+        renderCfStats();
+      }));
+      box.appendChild(row);
+    }
+  }
+
+  $('btn-create-back').addEventListener('click', showMenu);
+  $('btn-create-go').addEventListener('click', () => {
+    audio.ensure();
+    const def = {
+      id: 'you',
+      name: $('cf-name').value.trim() || 'Rocky Alumbs',
+      nick: $('cf-nick').value.trim() || 'The Truth',
+      flag: cf.flag,
+      ...cf.stats,
+      style: cf.style,
+      skin: cf.skin, trunks: cf.trunks, gloves: cf.gloves,
+    };
+    saveCareer({ v: 2, fighter: def, stage: 0, w: 0, l: 0, ko: 0, sp: 0 });
+    showCareerHub();
+  });
 
   // ---------------- Career hub ----------------
   function showCareerHub() {
     const c = loadCareer();
     if (!c) { showMenu(); return; }
-    const def = FIGHTERS.find(f => f.id === c.fighterId);
     const opps = careerOpponents(c);
-    $('career-title').textContent = `🏆 ${def.nick.toUpperCase()}'S CAREER`;
-    $('career-record').textContent = `${c.w}-${c.l} · ${c.ko} KO`;
+    $('career-title').textContent = `🏆 ${c.fighter.nick.toUpperCase()}'S CAREER`;
+    $('career-record').textContent = `${c.w}-${c.l} · ${c.ko} KO · ${careerRank(c)}`;
     const box = $('career-opponent');
     if (c.stage >= opps.length) {
       $('career-next-label').textContent = '';
-      box.innerHTML = `<div class="champion-banner">🏆 UNDISPUTED CHAMPION 🏆<br><small>Every fighter in the gym is beaten.</small></div>`;
+      box.innerHTML = `<div class="champion-banner">🏆 UNDISPUTED CHAMPION 🏆<br><small>Every fighter in the rankings is beaten.</small></div>`;
       $('btn-career-fight').classList.add('hidden');
     } else {
       const next = opps[c.stage];
-      $('career-next-label').textContent = `FIGHT ${c.stage + 1} OF ${opps.length} — NEXT OPPONENT`;
+      $('career-next-label').textContent = `NEXT OPPONENT — RANKED #${opps.length - c.stage}`;
       box.innerHTML = fighterCardHTML(next);
       $('btn-career-fight').classList.remove('hidden');
     }
+    renderSkillPoints(c);
+    renderRankings(c);
     show('screen-career');
+  }
+
+  // Ladder: unbeaten fighters above you (strongest at #1), you, then everyone
+  // you've already knocked off, struck through.
+  function renderRankings(c) {
+    const opps = careerOpponents(c);
+    const box = $('career-rankings');
+    const rows = [];
+    const row = (rank, name, rating, cls) =>
+      `<div class="rank-row ${cls || ''}">
+        <span class="rank-num">${rank === 1 ? '👑' : '#' + rank}</span>
+        <span class="rank-name">${name}</span>
+        <span class="rank-rating">${rating !== null ? '★ ' + rating : ''}</span>
+      </div>`;
+    let rank = 1;
+    if (c.stage >= opps.length) rows.push(row(rank++, `${c.fighter.name} "${c.fighter.nick}"`, fighterRating(c.fighter), 'you champ'));
+    for (let i = opps.length - 1; i >= c.stage; i--) {
+      const cls = (i === c.stage ? 'next' : '') + (rank === 1 ? ' champ' : '');
+      rows.push(row(rank++, `${opps[i].name} "${opps[i].nick}"`, fighterRating(opps[i]), cls));
+    }
+    if (c.stage < opps.length) {
+      rows.push(row(rank++, `${c.fighter.name} "${c.fighter.nick}"`, fighterRating(c.fighter), 'you'));
+    }
+    for (let i = c.stage - 1; i >= 0; i--) {
+      rows.push(row(rank++, `${opps[i].name} "${opps[i].nick}"`, fighterRating(opps[i]), 'beaten'));
+    }
+    box.innerHTML = rows.join('');
+  }
+
+  function renderSkillPoints(c) {
+    const box = $('career-sp');
+    if (!c.sp || c.sp <= 0) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    box.innerHTML = `<div class="sp-title">SKILL POINTS: ${c.sp} — SPEND THEM</div>`;
+    for (const [key, label] of CF_STATS) {
+      const v = c.fighter[key];
+      const row = document.createElement('div');
+      row.className = 'cf-stat';
+      row.innerHTML = `
+        <span class="cf-label">${label}</span>
+        <span class="cf-val">${v}</span>
+        <button ${v >= 10 ? 'disabled' : ''}>+</button>
+        <div class="stat-bar"><div style="width:${v * 10}%"></div></div>`;
+      row.querySelector('button').addEventListener('click', () => {
+        const cc = loadCareer();
+        if (!cc || cc.sp <= 0 || cc.fighter[key] >= 10) return;
+        cc.fighter[key]++;
+        cc.sp--;
+        saveCareer(cc);
+        showCareerHub();
+      });
+      box.appendChild(row);
+    }
   }
 
   $('btn-career-fight').addEventListener('click', () => {
@@ -114,7 +270,7 @@
     if (!c) { showMenu(); return; }
     const opps = careerOpponents(c);
     if (c.stage >= opps.length) return;
-    playerDef = FIGHTERS.find(f => f.id === c.fighterId);
+    playerDef = c.fighter;
     oppDef = opps[c.stage];
     mode = 'career';
     startFight();
@@ -122,9 +278,7 @@
   $('btn-career-menu').addEventListener('click', showMenu);
   $('btn-career-reset').addEventListener('click', () => {
     clearCareer();
-    renderGrid('career');
-    $('select-title').textContent = 'CHOOSE YOUR FIGHTER';
-    show('screen-select');
+    showCreate();
   });
 
   // ---------------- Fighter select ----------------
@@ -145,10 +299,13 @@
 
   function renderGrid(phase) {
     grid.innerHTML = '';
-    FIGHTERS.forEach(def => {
+    // Your career fighter is available to pick for exhibitions and sparring
+    const c = loadCareer();
+    const roster = (phase === 'player' || phase === 't-player') && c ? [c.fighter, ...FIGHTERS] : FIGHTERS;
+    roster.forEach(def => {
       const card = document.createElement('button');
       card.className = 'card';
-      if (phase === 'opponent' && playerDef && def.id === playerDef.id) card.classList.add('taken');
+      if ((phase === 'opponent' || phase === 't-partner') && playerDef && def.id === playerDef.id) card.classList.add('taken');
       card.innerHTML = `
         <div class="card-top">
           <span class="flag">${def.flag}</span>
@@ -165,13 +322,18 @@
       `;
       card.addEventListener('click', () => {
         audio.ensure();
-        if (phase === 'career') {
-          saveCareer({ fighterId: def.id, stage: 0, w: 0, l: 0, ko: 0 });
-          showCareerHub();
-        } else if (phase === 'player') {
+        if (phase === 'player') {
           playerDef = def;
           $('select-title').textContent = 'CHOOSE YOUR OPPONENT';
           renderGrid('opponent');
+        } else if (phase === 't-player') {
+          playerDef = def;
+          $('select-title').textContent = 'CHOOSE A SPARRING PARTNER';
+          renderGrid('t-partner');
+        } else if (phase === 't-partner') {
+          oppDef = def;
+          mode = 'training';
+          startFight();
         } else {
           oppDef = def;
           mode = 'exhibition';
@@ -184,7 +346,8 @@
 
   // ---------------- Fight lifecycle ----------------
   function startFight() {
-    game = new Game(playerDef, oppDef);
+    const training = mode === 'training';
+    game = new Game(playerDef, oppDef, training ? { training: true, spar: 'spar' } : {});
     resultShownAt = null;
     resultApplied = false;
     hitstopT = 0;
@@ -195,6 +358,8 @@
     $('result-panel').classList.add('hidden');
     $('rest-panel').classList.add('hidden');
     $('count-overlay').classList.add('hidden');
+    $('training-bar').classList.toggle('hidden', !training);
+    if (training) setSparButtons('spar');
     show('screen-fight');
     renderer.resize();
   }
@@ -206,8 +371,10 @@
     if (!c) return;
     if (r.winner === 'p') {
       c.w++;
-      if (r.method === 'KO' || r.method === 'TKO') c.ko++;
+      const ko = r.method === 'KO' || r.method === 'TKO';
+      if (ko) c.ko++;
       c.stage++;
+      c.sp = (c.sp || 0) + 2 + (ko ? 1 : 0); // win bonus, extra for a stoppage
     } else if (r.winner === 'o') {
       c.l++;
     }
@@ -218,6 +385,24 @@
   $('btn-rematch').addEventListener('click', () => { audio.ensure(); startFight(); });
   $('btn-continue').addEventListener('click', showCareerHub);
   $('btn-menu').addEventListener('click', showMenu);
+
+  // ---------------- Training bar ----------------
+  function setSparButtons(modeName) {
+    document.querySelectorAll('.tb-btn[data-spar]').forEach(b =>
+      b.classList.toggle('active', b.dataset.spar === modeName));
+  }
+  document.querySelectorAll('.tb-btn[data-spar]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      if (!game || !game.training) return;
+      game.setSpar(btn.dataset.spar);
+      setSparButtons(btn.dataset.spar);
+    }));
+  $('tb-reset').addEventListener('click', () => {
+    if (!game || !game.training) return;
+    game.trainingReset();
+    banner('RESET', 'round', 0.7);
+  });
+  $('tb-exit').addEventListener('click', showMenu);
 
   // ---------------- Corner advice ----------------
   function cornerAdvice() {
@@ -239,8 +424,8 @@
   function handleEvent(e) {
     switch (e.type) {
       case 'roundstart':
-        banner(`ROUND ${e.round}`, 'round', 1.2);
-        audio.say(`Round ${e.round}`);
+        if (game.training) { banner('GYM SESSION', 'round', 1.2); audio.say('Time to work'); }
+        else { banner(`ROUND ${e.round}`, 'round', 1.2); audio.say(`Round ${e.round}`); }
         break;
       case 'fight':
         banner('FIGHT!', 'fight', 0.8);
@@ -258,6 +443,7 @@
         else if (e.counter) renderer.addFloat(a.head.x, a.head.y - 40, 'COUNTER!', '#ffe14d', 26);
         else if (e.dmg >= 5) renderer.addFloat(a.head.x, a.head.y - 40, 'BIG SHOT!', '#ff7a4d', 22);
         else if (e.body && e.dmg >= 3) renderer.addFloat(a.chest.x, a.chest.y - 20, 'BODY!', '#ffb56b', 18);
+        if (game.training) renderer.addFloat(spot.x + 26, spot.y - 14, e.dmg.toFixed(1), '#c9d4ff', 15);
         hitstopT = Math.max(hitstopT, e.smash || e.counter ? 0.09 : e.dmg >= 3.5 ? 0.06 : 0);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate(25);
         break;
@@ -291,6 +477,15 @@
         renderer.addFloat(a.head.x, a.head.y - 44, e.kind === 'weave' ? 'WEAVED!' : 'SLIPPED!', '#6de3ff', 20);
         break;
       }
+      case 'sidestep': {
+        const a = anchor(e.by);
+        audio.whoosh();
+        renderer.addFloat(a.head.x, a.head.y - 44, 'SIDESTEPPED!', '#6de3ff', 20);
+        break;
+      }
+      case 'lanestep':
+        audio.whoosh();
+        break;
       case 'miss':
         audio.whoosh();
         break;
@@ -340,8 +535,8 @@
     set('hud-o-health', game.o.health / game.o.maxHealth, game.o.health < 30);
     set('hud-p-stam', game.p.stamina / game.p.maxStamina);
     set('hud-o-stam', game.o.stamina / game.o.maxStamina);
-    $('hud-round').textContent = `R${game.round}`;
-    $('hud-clock').textContent = fmtClock(game.clock);
+    $('hud-round').textContent = game.training ? 'GYM' : `R${game.round}`;
+    $('hud-clock').textContent = game.training ? '∞' : fmtClock(game.clock);
   }
 
   function updateOverlays() {

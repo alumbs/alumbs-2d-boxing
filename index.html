@@ -20,6 +20,30 @@
       <button id="btn-career" class="big-btn menu-btn">🏆 CAREER</button>
       <div id="career-summary" class="career-summary hidden"></div>
       <button id="btn-exhibition" class="big-btn alt menu-btn">🥊 EXHIBITION</button>
+      <button id="btn-training" class="big-btn alt menu-btn">🏋️ TRAINING</button>
+    </div>
+  </div>
+
+  <!-- ============ CREATE A FIGHTER ============ -->
+  <div id="screen-create" class="screen hidden">
+    <header class="select-header">
+      <h1>🥊 NEW FIGHTER</h1>
+      <h2>BUILD YOUR CONTENDER</h2>
+    </header>
+    <div class="create-body">
+      <div class="create-row"><label for="cf-name">NAME</label><input id="cf-name" maxlength="18" placeholder="Rocky Alumbs" autocomplete="off"></div>
+      <div class="create-row"><label for="cf-nick">NICKNAME</label><input id="cf-nick" maxlength="14" placeholder="The Truth" autocomplete="off"></div>
+      <div class="create-row"><label>FLAG</label><div id="cf-flags" class="swatches"></div></div>
+      <div class="create-row"><label>SKIN</label><div id="cf-skins" class="swatches"></div></div>
+      <div class="create-row"><label>TRUNKS</label><div id="cf-trunks" class="swatches"></div></div>
+      <div class="create-row"><label>GLOVES</label><div id="cf-gloves" class="swatches"></div></div>
+      <div class="create-row"><label>STYLE</label><div id="cf-styles" class="swatches"></div></div>
+      <div class="create-row"><label>STATS</label><div class="stat-pool">POINTS LEFT: <b id="cf-pool">14</b></div></div>
+      <div id="cf-stats"></div>
+      <div class="panel-btns create-btns">
+        <button id="btn-create-go" class="big-btn">START CAREER</button>
+        <button id="btn-create-back" class="big-btn alt">← MENU</button>
+      </div>
     </div>
   </div>
 
@@ -30,8 +54,10 @@
       <h2 id="career-record">0-0 · 0 KO</h2>
     </header>
     <div class="career-body">
+      <div id="career-sp" class="career-sp hidden"></div>
       <div id="career-next-label" class="career-next-label">NEXT OPPONENT</div>
       <div id="career-opponent"></div>
+      <div id="career-rankings" class="rankings"></div>
       <div class="panel-btns career-btns">
         <button id="btn-career-fight" class="big-btn">FIGHT</button>
         <button id="btn-career-menu" class="big-btn alt">MENU</button>
@@ -73,6 +99,15 @@
     <div id="stage">
       <canvas id="ring"></canvas>
 
+      <div id="training-bar" class="training-bar hidden">
+        <span class="tb-label">GYM</span>
+        <button id="tb-dummy" class="tb-btn" data-spar="dummy">DUMMY</button>
+        <button id="tb-defend" class="tb-btn" data-spar="defend">DEFEND</button>
+        <button id="tb-spar" class="tb-btn active" data-spar="spar">SPAR</button>
+        <button id="tb-reset" class="tb-btn alt">RESET</button>
+        <button id="tb-exit" class="tb-btn alt">EXIT</button>
+      </div>
+
       <div id="banner" class="banner"></div>
 
       <div id="count-overlay" class="overlay hidden">
@@ -109,6 +144,8 @@
       <div class="cluster movedef">
         <button id="btn-back" class="ctl move">◀</button>
         <button id="btn-fwd" class="ctl move">▶</button>
+        <button id="btn-lane-up" class="ctl move">▲</button>
+        <button id="btn-lane-down" class="ctl move">▼</button>
         <button id="btn-lean" class="ctl defense">LEAN</button>
         <button id="btn-weave" class="ctl defense">WEAVE</button>
         <button id="btn-guard-high" class="ctl defense">BLOCK ▲</button>
@@ -123,7 +160,7 @@
         <button class="ctl punch body" data-punch="body">BODY</button>
       </div>
     </div>
-    <div id="key-hint" class="hidden">⌨ A/D move · W lean · E weave · S/Space high block · X low block · C duck (hold) · J jab · K cross · L hook · I uppercut · M body · mash Space to get up</div>
+    <div id="key-hint" class="hidden">⌨ A/D move · W/S switch lane · Q lean · E weave · Space high block · X low block · C duck (hold) · J jab · K cross · L hook · I uppercut · M body · mash Space to get up</div>
   </div>
 
   <script src="js/fighters.js"></script>

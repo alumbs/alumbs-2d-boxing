@@ -47,6 +47,14 @@ const MIN_GAP = 70;
 const START_P_X = 300;
 const START_O_X = 600;
 
+// Lanes: 0 = far, 1 = mid, 2 = near. Punches only land when both fighters
+// are settled in the same lane, so a lane step doubles as a side-step evade.
+const LANES = 3;
+const LANE_STEP_DUR = 0.25;  // seconds for laneF to travel one lane
+const LANE_COOLDOWN = 0.3;
+const LANE_STAM = 2;
+const SEPARATION_SPEED = 260; // px/s to shove overlapping fighters apart
+
 const AI_STYLES = {
   slugger: {
     agg: 0.65, blockPref: 0.75, react: 0.0, prefGap: 115,
@@ -72,8 +80,10 @@ function makeFighter(def, isAI, x, dir) {
   return {
     def,
     isAI,
-    x, dir,               // dir: +1 faces right (player), -1 faces left (AI)
-    moveDir: 0,           // +1 forward (toward opponent), -1 retreat, 0 still
+    x, dir,               // dir: +1 faces right, -1 faces left (auto-faces the opponent)
+    lane: 1, laneF: 1,    // target lane and smooth render position
+    laneCd: 0,
+    moveDir: 0,           // absolute: +1 right, -1 left, 0 still
     health: 100, maxHealth: 100,
     stamina: 100, maxStamina: 100,
     state: 'idle',        // idle | punch | block | dodge | hit | down | rising | victory | ko
@@ -91,7 +101,7 @@ function makeFighter(def, isAI, x, dir) {
     knockdownsTotal: 0,
     round: { landed: 0, thrown: 0, dmg: 0 },
     total: { landed: 0, thrown: 0, dmg: 0 },
-    ai: isAI ? { cd: 1.0, comboQueue: [], seenPunch: false, blockT: 0, retreatT: 0 } : null,
+    ai: isAI ? { cd: 1.0, comboQueue: [], seenPunch: false, blockT: 0, retreatT: 0, laneT: 0 } : null,
   };
 }
 
@@ -114,7 +124,10 @@ function punchDurations(f, pdef, gassed) {
 }
 
 class Game {
-  constructor(playerDef, oppDef) {
+  // opts: { training: bool, spar: 'dummy' | 'defend' | 'spar' }
+  constructor(playerDef, oppDef, opts = {}) {
+    this.training = !!opts.training;
+    this.spar = opts.spar || 'spar';
     this.p = makeFighter(playerDef, false, START_P_X, 1);
     this.o = makeFighter(oppDef, true, START_O_X, -1);
     this.round = 1;
@@ -133,6 +146,12 @@ class Game {
   emit(e) { this.events.push(e); }
 
   dist() { return Math.abs(this.o.x - this.p.x); }
+
+  // Both fighters settled in the same lane → punches can land, bodies collide
+  laneAligned(a, b) {
+    return a.lane === b.lane &&
+      Math.abs(a.laneF - a.lane) < 0.3 && Math.abs(b.laneF - b.lane) < 0.3;
+  }
 
   // ---------- Player intents ----------
   // Inputs pressed while busy (punching, hitstun, dodging) are buffered and
@@ -154,6 +173,20 @@ class Game {
   setBlock(held) { this.setGuard(held ? 'high' : null); } // legacy alias
   setMove(dir) {
     this.p.moveDir = clamp(dir, -1, 1);
+  }
+  // d: -1 step to a farther lane, +1 step nearer
+  laneStep(d) {
+    if (this.state !== 'fighting') return;
+    this.doLaneStep(this.p, d);
+  }
+  doLaneStep(f, d) {
+    if ((f.state !== 'idle' && f.state !== 'block') || f.laneCd > 0) return;
+    const nl = clamp(f.lane + d, 0, LANES - 1);
+    if (nl === f.lane) return;
+    f.lane = nl;
+    f.laneCd = LANE_STEP_DUR + LANE_COOLDOWN;
+    f.stamina = Math.max(0, f.stamina - LANE_STAM);
+    this.emit({ type: 'lanestep', by: f });
   }
   dodge(kind = 'lean') {
     if (this.state !== 'fighting') return;
@@ -211,21 +244,41 @@ class Game {
     this.emit({ type: 'stun', target: f });
   }
 
-  // Move a fighter, respecting ring bounds and the minimum gap
+  // Move a fighter. moveDir is absolute (left/right). You can't walk through
+  // an opponent in your lane, but a different lane lets you slide right past.
   applyMovement(f, opp, dt, speedScale) {
     if (f.moveDir === 0) return;
-    const spd = (70 + f.def.speed * 10) * speedScale * (f.moveDir > 0 ? 1 : 0.85);
-    let nx = f.x + f.moveDir * f.dir * spd * dt;
-    if (f.dir > 0) nx = clamp(nx, RING_LEFT, opp.x - MIN_GAP);
-    else nx = clamp(nx, opp.x + MIN_GAP, RING_RIGHT);
+    const toward = (opp.x - f.x) * f.moveDir > 0;
+    const spd = (70 + f.def.speed * 10) * speedScale * (toward ? 1 : 0.85);
+    let nx = clamp(f.x + f.moveDir * spd * dt, RING_LEFT, RING_RIGHT);
+    if (this.laneAligned(f, opp)) {
+      if (f.x <= opp.x) {
+        const lim = opp.x - MIN_GAP;
+        nx = Math.min(nx, Math.max(f.x, lim));
+      } else {
+        const lim = opp.x + MIN_GAP;
+        nx = Math.max(nx, Math.min(f.x, lim));
+      }
+    }
     f.x = nx;
   }
 
+  // If lanes merge while overlapping, shove both fighters apart gradually
+  separate(dt) {
+    const p = this.p, o = this.o;
+    if (!this.laneAligned(p, o)) return;
+    const dx = o.x - p.x;
+    const gap = Math.abs(dx);
+    if (gap >= MIN_GAP) return;
+    const push = Math.min(MIN_GAP - gap, SEPARATION_SPEED * dt) / 2;
+    const s = dx === 0 ? (p.dir || 1) : Math.sign(dx);
+    p.x = clamp(p.x - s * push, RING_LEFT, RING_RIGHT);
+    o.x = clamp(o.x + s * push, RING_LEFT, RING_RIGHT);
+  }
+
   knockback(target, attacker, px) {
-    let nx = target.x - target.dir * px; // pushed backward, away from the attacker
-    if (target.dir > 0) nx = clamp(nx, RING_LEFT, attacker.x - MIN_GAP);
-    else nx = clamp(nx, attacker.x + MIN_GAP, RING_RIGHT);
-    target.x = nx;
+    const s = Math.sign(target.x - attacker.x) || -attacker.dir;
+    target.x = clamp(target.x + s * px, RING_LEFT, RING_RIGHT);
   }
 
   // ---------- Punch resolution ----------
@@ -235,6 +288,20 @@ class Game {
 
     // Out of range → whiff
     if (this.dist() > pdef.reach) { this.emit({ type: 'miss', by: attacker, range: true }); return; }
+
+    // Different lane (or mid lane-step) → the punch sails past. A deliberate
+    // side-step earns a counter window, just like a clean slip.
+    if (!this.laneAligned(attacker, target)) {
+      if (Math.abs(target.laneF - target.lane) > 0.05 || target.laneCd > 0) {
+        target.counterWindow = COUNTER_WINDOW;
+        punch.dur.total += pdef.recover * 0.5;
+        attacker.stamina = Math.max(0, attacker.stamina - 3);
+        this.emit({ type: 'sidestep', by: target, attacker });
+      } else {
+        this.emit({ type: 'miss', by: attacker, range: true });
+      }
+      return;
+    }
 
     if (target.graceT > 0) { this.emit({ type: 'miss', by: attacker }); return; }
 
@@ -363,7 +430,7 @@ class Game {
     const riseTarget = clamp(1 + (target.knockdownsTotal - 1) * 0.35 + Math.max(0, hurt) * 0.25, 1, 2.1);
     this.count = { downed: target, standing, num: 0, t: 0, riseMeter: 0, riseTarget, aiRiseAt };
     this.emit({ type: 'knockdown', target });
-    if (target.knockdownsRound >= 3) {
+    if (!this.training && target.knockdownsRound >= 3) {
       this.finish('TKO', standing === this.p ? 'p' : 'o');
       return;
     }
@@ -372,7 +439,8 @@ class Game {
   rise(f) {
     f.state = 'rising';
     f.stateT = 0;
-    f.health = Math.max(f.health, Math.min(40, 12 + f.def.chin * 2.8));
+    if (this.training) f.health = Math.max(f.health, 60); // gym rules: shake it off
+    else f.health = Math.max(f.health, Math.min(40, 12 + f.def.chin * 2.8));
     f.stamina = Math.min(f.maxStamina, f.stamina + 25);
     f.graceT = 1.5;
     this.count = null;
@@ -450,11 +518,36 @@ class Game {
     this.state = 'intro';
     this.stateT = 0;
     // Back to your corners
-    this.p.x = START_P_X;
-    this.o.x = START_O_X;
+    this.p.x = START_P_X; this.p.dir = 1; this.p.lane = 1; this.p.laneF = 1;
+    this.o.x = START_O_X; this.o.dir = -1; this.o.lane = 1; this.o.laneF = 1;
     this.o.ai.cd = 0.9 + Math.random() * 0.5;
     this.o.ai.comboQueue = [];
     this.emit({ type: 'roundstart', round: this.round });
+  }
+
+  // ---------- Training ----------
+  setSpar(mode) { this.spar = mode; }
+
+  trainingReset() {
+    if (!this.training) return;
+    for (const f of [this.p, this.o]) {
+      f.health = f.maxHealth;
+      f.stamina = f.maxStamina;
+      f.state = 'idle'; f.stateT = 0;
+      f.punch = null; f.moveDir = 0; f.blockHeld = false;
+      f.counterWindow = 0; f.stunCd = 0; f.dodgeCd = 0; f.laneCd = 0;
+      f.knockdownsRound = 0; f.knockdownsTotal = 0;
+      f.round = { landed: 0, thrown: 0, dmg: 0 };
+      f.total = { landed: 0, thrown: 0, dmg: 0 };
+    }
+    this.p.x = START_P_X; this.p.dir = 1; this.p.lane = 1; this.p.laneF = 1;
+    this.o.x = START_O_X; this.o.dir = -1; this.o.lane = 1; this.o.laneF = 1;
+    this.o.ai.comboQueue = [];
+    this.o.ai.cd = 0.6;
+    this.buffer = null;
+    this.count = null;
+    this.state = 'fighting';
+    this.stateT = 0;
   }
 
   // ---------- Per-frame update ----------
@@ -467,14 +560,15 @@ class Game {
         if (this.stateT >= 2.2) { this.state = 'fighting'; this.stateT = 0; this.emit({ type: 'fight' }); }
         break;
       case 'fighting': {
-        this.clock -= dt * CLOCK_SPEED;
+        if (!this.training) this.clock -= dt * CLOCK_SPEED;
         this.updateFighter(this.p, this.o, dt);
         if (this.state !== 'fighting') break; // knockdown/finish mid-update
         this.drainBuffer(dt);
         this.updateFighter(this.o, this.p, dt);
         if (this.state !== 'fighting') break;
+        this.separate(dt);
         this.aiUpdate(this.o, this.p, dt);
-        if (this.clock <= 0) { this.clock = 0; this.endRound(); }
+        if (!this.training && this.clock <= 0) { this.clock = 0; this.endRound(); }
         break;
       }
       case 'count': {
@@ -489,6 +583,7 @@ class Game {
           c.num++;
           this.emit({ type: 'counttick', num: c.num });
           if (c.num >= 10) {
+            if (this.training) { this.rise(c.downed); return; } // no KOs in the gym
             this.finish('KO', c.standing === this.p ? 'p' : 'o');
             return;
           }
@@ -510,8 +605,15 @@ class Game {
     }
   }
 
+  updateLane(f, dt) {
+    if (f.laneCd > 0) f.laneCd -= dt;
+    const step = dt / LANE_STEP_DUR;
+    f.laneF += clamp(f.lane - f.laneF, -step, step);
+  }
+
   updateFighterPassive(f, dt) {
     f.stateT += dt;
+    this.updateLane(f, dt);
     if (f.dodgeCd > 0) f.dodgeCd -= dt;
     if (f.graceT > 0) f.graceT -= dt;
     if (f.counterWindow > 0) f.counterWindow -= dt;
@@ -526,6 +628,11 @@ class Game {
 
   updateFighter(f, opp, dt) {
     f.stateT += dt;
+    this.updateLane(f, dt);
+    // Auto-face the opponent whenever free — circling past them flips you around
+    if (f.state === 'idle' || f.state === 'block' || f.state === 'dodge') {
+      f.dir = opp.x >= f.x ? 1 : -1;
+    }
     if (f.dodgeCd > 0) f.dodgeCd -= dt;
     if (f.graceT > 0) f.graceT -= dt;
     if (f.counterWindow > 0) f.counterWindow -= dt;
@@ -580,10 +687,7 @@ class Game {
       case 'dodge': {
         // Leaning back drifts you slightly out of range; a weave holds ground
         if (f.dodgeKind === 'lean') {
-          let nx = f.x - f.dir * 55 * dt;
-          if (f.dir > 0) nx = clamp(nx, RING_LEFT, opp.x - MIN_GAP);
-          else nx = clamp(nx, opp.x + MIN_GAP, RING_RIGHT);
-          f.x = nx;
+          f.x = clamp(f.x - f.dir * 55 * dt, RING_LEFT, RING_RIGHT);
         }
         if (f.stateT >= DODGE_DUR) {
           f.state = (f === this.p && f.blockHeld) ? 'block' : 'idle';
@@ -612,17 +716,30 @@ class Game {
     const style = AI_STYLES[f.def.style];
     ai.cd -= dt;
     if (ai.retreatT > 0) ai.retreatT -= dt;
+    if (ai.laneT > 0) ai.laneT -= dt;
+
+    // A dummy just stands there and takes it
+    if (this.training && this.spar === 'dummy') { f.moveDir = 0; return; }
 
     const d = this.dist();
     const stamFrac = f.stamina / f.maxStamina;
+    const toward = Math.sign(opp.x - f.x) || -f.dir;
+
+    // Chase the player's lane (defend-only partners hold their ground more)
+    if (f.lane !== opp.lane && ai.laneT <= 0 && f.laneCd <= 0 &&
+        (f.state === 'idle' || f.state === 'block')) {
+      ai.laneT = 0.3 + Math.random() * 0.6;
+      const pursue = this.training && this.spar === 'defend' ? 0.35 : 0.8;
+      if (Math.random() < pursue) this.doLaneStep(f, Math.sign(opp.lane - f.lane));
+    }
 
     // Footwork: hold the style's preferred distance; back off when gassed or resetting
     let prefGap = style.prefGap;
     if (stamFrac < 0.3) prefGap += 70;
     if (ai.retreatT > 0) prefGap += 90;
     if (f.state === 'idle' || f.state === 'block') {
-      if (d > prefGap + 14) f.moveDir = 1;
-      else if (d < prefGap - 14) f.moveDir = -1;
+      if (d > prefGap + 14) f.moveDir = toward;
+      else if (d < prefGap - 14) f.moveDir = -toward;
       else f.moveDir = 0;
     } else f.moveDir = 0;
 
@@ -632,8 +749,14 @@ class Game {
         ai.seenPunch = true;
         const reactChance = clamp(0.18 + f.def.speed * 0.05 + style.react, 0, 0.85);
         if (Math.random() < reactChance) {
+          const slick = f.def.style === 'counter' || f.def.style === 'out-boxer';
+          const wantsSide = Math.random() < (slick ? 0.22 : 0.08);
           const wantsDodge = Math.random() < (f.def.style === 'counter' ? 0.5 : f.def.style === 'out-boxer' ? 0.4 : 0.18);
-          if (wantsDodge && f.dodgeCd <= 0 && f.state === 'idle') {
+          if (wantsSide && f.laneCd <= 0 && f.state === 'idle') {
+            // Step out of the lane entirely — the punch hits air
+            const dLane = f.lane === 0 ? 1 : f.lane === 2 ? -1 : (Math.random() < 0.5 ? -1 : 1);
+            this.doLaneStep(f, dLane);
+          } else if (wantsDodge && f.dodgeCd <= 0 && f.state === 'idle') {
             // Pick the correct evade for the incoming punch (~15% wrong pick)
             const pt = opp.punch.type;
             let kind = pt === 'hook' ? 'weave' : pt === 'uppercut' || pt === 'body' ? 'lean' : (Math.random() < 0.5 ? 'lean' : 'weave');
@@ -662,13 +785,16 @@ class Game {
 
     if (f.state !== 'idle' || ai.cd > 0) return;
 
+    // Defend-only sparring partners never throw back
+    if (this.training && this.spar === 'defend') return;
+
     // Slow fighters think slower too
     const tempo = clamp(1.45 - f.def.speed * 0.055, 0.9, 1.35);
 
     // Continue a combo
     if (ai.comboQueue.length > 0) {
       const next = ai.comboQueue.shift();
-      if (d <= PUNCHES[next].reach + 10) {
+      if (d <= PUNCHES[next].reach + 10 && this.laneAligned(f, opp)) {
         this.throwPunch(f, next);
         ai.cd = ai.comboQueue.length > 0 ? 0.05 + Math.random() * 0.1 : (0.4 + Math.random() * 0.55) * tempo;
       } else {
@@ -709,9 +835,9 @@ class Game {
         else combo = Math.random() < 0.55 ? ['body'] : ['uppercut'];
       }
       else combo = style.combos[Math.floor(Math.random() * style.combos.length)];
-      // Only start swinging from range the first punch can land
-      if (d > PUNCHES[combo[0]].reach) {
-        f.moveDir = 1;
+      // Only start swinging from range (and the right lane) the first punch can land
+      if (d > PUNCHES[combo[0]].reach || !this.laneAligned(f, opp)) {
+        f.moveDir = toward;
         ai.cd = 0.12;
         return;
       }
