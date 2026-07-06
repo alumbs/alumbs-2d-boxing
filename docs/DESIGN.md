@@ -74,6 +74,10 @@ that selects the AI's combo table, aggression and dodge/block preference.
   successful dodge opens a 0.9s **counter window**: your next landed punch does 1.5×.
 - **Whiffing** into a dodge extends your recovery 1.5× and costs extra stamina.
 - **Hitstun** scales with damage taken.
+- **Trades**: a punch already in windup is only interrupted by cross-weight
+  or heavier (base dmg ≥ 2.2). Jabs still land and score, but the committed
+  punch keeps coming — so jab-spamming into a slower fighter means eating
+  their hook in the trade instead of stuffing everything for free.
 - **Knockdowns**: health reaching 0 always drops you; big punches (hook/uppercut)
   landing while under 40 health can score flash knockdowns, resisted by chin.
   Player taps rapidly to beat the 10-count; the required mash effort scales up

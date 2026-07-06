@@ -322,6 +322,10 @@ class Game {
       return;
     }
     if (target.state === 'stun') return; // stays wobbling, no fresh hitstun
+    // Jabs can't stuff a punch already being thrown — you land, but they
+    // keep coming (trades). Only cross-weight and up interrupts a windup.
+    const windingUp = target.state === 'punch' && target.punch && !target.punch.resolved;
+    if (windingUp && pdef.dmg < 2.2) return;
     if (target.state !== 'hit' || target.stateT > 0.05) {
       this.stagger(target, clamp((isBody ? 0.12 : 0.16) + dmg * 0.03, 0.12, 0.45));
     }
