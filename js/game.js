@@ -20,6 +20,7 @@ const DODGE_COOLDOWN = 0.5;
 const DODGE_STAM = 3;
 const COUNTER_WINDOW = 0.9;
 const COUNTER_MULT = 1.5;
+const COUNTER_WINDUP_MUL = 0.75; // punch snaps out ~25% faster while cashing in a counter
 const INPUT_BUFFER = 0.5;       // seconds a queued input stays alive
 const DUCK_DRAIN = 9;           // stamina per second while covering up
 const COUNT_TICK = 0.85;        // real seconds per count number
@@ -106,7 +107,7 @@ function makeFighter(def, isAI, x, dir) {
   };
 }
 
-function punchDurations(f, pdef, gassed) {
+function punchDurations(f, pdef, gassed, countering) {
   // Speed stat matters a lot: speed 2 → 1.23x slower, speed 10 → 0.75x
   let mul = clamp(1.35 - f.def.speed * 0.06, 0.7, 1.3);
   if (gassed) mul *= 1.3;
@@ -117,6 +118,9 @@ function punchDurations(f, pdef, gassed) {
     const windupMul = clamp(2.6 - f.def.speed * 0.16, 1.15, 2.35);
     windup = Math.max(windup * windupMul * (1 + Math.random() * 0.3), 0.28);
   }
+  // Cashing in a counter window (from a dodge or side-step): the opening's
+  // already there, so the punch snaps out noticeably faster.
+  if (countering) windup *= COUNTER_WINDUP_MUL;
   return {
     windup,
     active: pdef.active * mul,
@@ -234,10 +238,11 @@ class Game {
     if (f.state !== 'idle' && f.state !== 'block') return;
     const pdef = PUNCHES[type];
     const gassed = f.stamina < pdef.stam;
+    const countering = f.counterWindow > 0;
     f.stamina = Math.max(0, f.stamina - pdef.stam);
     f.state = 'punch';
     f.stateT = 0;
-    f.punch = { type, def: pdef, dur: punchDurations(f, pdef, gassed), resolved: false, gassed };
+    f.punch = { type, def: pdef, dur: punchDurations(f, pdef, gassed, countering), resolved: false, gassed, countering };
     f.round.thrown++;
     f.total.thrown++;
   }
@@ -447,7 +452,7 @@ class Game {
     }
     // Each knockdown (and worse shape) takes more mashing to beat
     const riseTarget = clamp(1 + (target.knockdownsTotal - 1) * 0.35 + Math.max(0, hurt) * 0.25, 1, 2.1);
-    this.count = { downed: target, standing, num: 0, t: 0, riseMeter: 0, riseTarget, aiRiseAt };
+    this.count = { downed: target, standing, num: 0, t: 0, riseMeter: 0, riseTarget, aiRiseAt, staminaAtDown: target.stamina };
     this.emit({ type: 'knockdown', target });
     if (!this.training && target.knockdownsRound >= 3) {
       this.finish('TKO', standing === this.p ? 'p' : 'o');
@@ -460,7 +465,9 @@ class Game {
     f.stateT = 0;
     if (this.training) f.health = Math.max(f.health, 60); // gym rules: shake it off
     else f.health = Math.max(f.health, Math.min(40, 12 + f.def.chin * 2.8));
-    f.stamina = Math.min(f.maxStamina, f.stamina + 25);
+    // Stamina already climbed through the count (10%/count); a small extra
+    // jolt on top for actually getting back to your feet.
+    f.stamina = Math.min(f.maxStamina, f.stamina + 8);
     f.graceT = 1.5;
     this.count = null;
     this.state = 'fighting';
@@ -599,7 +606,6 @@ class Game {
         c.t += dt;
         c.downed.stateT += dt;
         this.updateFighterPassive(c.standing, dt);
-        if (c.downed === this.p) c.riseMeter = clamp(c.riseMeter + dt * 0.02 / c.riseTarget, 0, 1);
         while (c.t >= COUNT_TICK) {
           c.t -= COUNT_TICK;
           c.num++;
@@ -610,6 +616,16 @@ class Game {
             return;
           }
         }
+        // Resting on the canvas still counts: the downed fighter recovers
+        // 10% of their stamina per count reached (a 6-count → 60% back),
+        // ramping smoothly toward the next tick rather than jumping. Never
+        // drops them below whatever stamina they still had when they fell.
+        {
+          const recoveredFrac = (c.num + clamp(c.t / COUNT_TICK, 0, 1)) * 0.1;
+          const target = Math.max(c.staminaAtDown, c.downed.maxStamina * recoveredFrac);
+          c.downed.stamina = Math.min(c.downed.maxStamina, target);
+        }
+        if (c.downed === this.p) c.riseMeter = clamp(c.riseMeter + dt * 0.02 / c.riseTarget, 0, 1);
         const canRise = c.num >= 1;
         if (canRise) {
           if (c.downed === this.p && c.riseMeter >= 1) this.rise(this.p);

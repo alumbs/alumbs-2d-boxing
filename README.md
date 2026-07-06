@@ -42,13 +42,18 @@ Ducking covers both but burns stamina while held, and an uppercut smashes
 straight through it. The same applies to the opponent: watch their guard
 height and hit what's open. **LEAN evades straights and body shots; WEAVE
 rolls under hooks — but weaving into an uppercut gets you smashed.** A clean
-evade opens a counter window (1.5×), and a big counter leaves them DAZED —
-wobbling, stars circling, free shots until they recover. Inputs pressed
-while you're mid-punch are buffered
-and fire the instant you're free. Mind your range — jabs reach farthest, uppercuts and body
-shots need to be close. Body shots steal stamina. Gassed punches hit like
-pillows. The roster is ordered weakest to strongest — start at the top of the
-list if you're getting hurt.
+evade (or a well-timed side-step) opens a counter window: your next punch
+does 1.5× damage **and** snaps out 25% faster, so cash it in quick. A big
+counter leaves them DAZED — wobbling, stars circling, free shots until they
+recover. Inputs pressed while you're mid-punch (or mid-lane-step) are
+buffered and fire the instant you're free. Mind your range — jabs reach
+farthest, uppercuts and body shots need to be close. Body shots steal
+stamina. Gassed punches hit like pillows. **Getting knocked down isn't a
+total loss** — you recover 10% of your stamina for every count that ticks
+by (a 6-count back on your feet = 60% of your wind back), so a fresh
+knockdown while gassed is a chance to recover, not just a countdown. The
+roster is ordered weakest to strongest — start at the top of the list if
+you're getting hurt.
 
 ## Run locally
 
