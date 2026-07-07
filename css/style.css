@@ -419,6 +419,12 @@ html, body {
 .cards b { color: var(--text); }
 .rest-tip { font-size: 13px; color: var(--muted); }
 .panel-btns { display: flex; gap: 12px; }
+#highlight-panel video {
+  width: min(480px, 92vw);
+  max-height: 60vh;
+  border-radius: 10px;
+  background: #000;
+}
 
 #count-num {
   font-size: clamp(64px, 18vw, 120px);

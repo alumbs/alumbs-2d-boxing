@@ -26,6 +26,10 @@
   let resultApplied = false;
   let hitstopT = 0;
   let paused = false;
+  let highlightIdleAt = null;  // timestamp when reel should auto-start if untouched
+  let highlightPlaying = false;
+  let highlightQueue = [];
+  let highlightQueueIdx = 0;
 
   // ---------------- Career persistence ----------------
   // v2: { v: 2, fighter: <def>, stage, w, l, ko, sp }. v1 saves (fighterId)
@@ -402,6 +406,9 @@
     $('hud-o-name').textContent = oppDef.nick.toUpperCase();
     $('result-panel').classList.add('hidden');
     $('rest-panel').classList.add('hidden');
+    $('highlight-panel').classList.add('hidden');
+    highlightIdleAt = null;
+    highlightPlaying = false;
     $('count-overlay').classList.add('hidden');
     $('pause-overlay').classList.add('hidden');
     $('btn-skip-intro').classList.add('hidden');
@@ -748,6 +755,10 @@
       showResult();
       resultShownAt = null;
     }
+    if (highlightIdleAt && !highlightPlaying && performance.now() >= highlightIdleAt) {
+      highlightIdleAt = null;
+      startHighlightReel();
+    }
   }
 
   function showResult() {
@@ -794,7 +805,79 @@
     $('btn-continue').classList.toggle('hidden', !careerish);
     $('btn-rematch').classList.toggle('hidden', careerish);
     panel.classList.remove('hidden');
+    highlightIdleAt = performance.now() + 4000;
   }
+
+  const HIGHLIGHT_PRIORITY = { finish: 0, knockdown: 1, stun: 2, power: 3, dodge: 4 };
+  const HIGHLIGHT_SLOWMO = { knockdown: true, finish: true, dodge: true };
+
+  function selectHighlightClips(marks) {
+    const finishes = marks.filter(m => m.type === 'finish');
+    const rest = marks.filter(m => m.type !== 'finish')
+      .sort((a, b) => HIGHLIGHT_PRIORITY[a.type] - HIGHLIGHT_PRIORITY[b.type] || b.start - a.start)
+      .slice(0, 5);
+    return finishes.concat(rest);
+  }
+
+  function cancelHighlightReel() {
+    highlightIdleAt = null;
+    if (!highlightPlaying) return;
+    highlightPlaying = false;
+    const video = $('highlight-video');
+    video.pause();
+    video.onended = null;
+    video.ontimeupdate = null;
+    $('highlight-panel').classList.add('hidden');
+  }
+
+  function playNextHighlightClip() {
+    if (highlightQueueIdx >= highlightQueue.length) {
+      cancelHighlightReel();
+      return;
+    }
+    const clip = highlightQueue[highlightQueueIdx];
+    const video = $('highlight-video');
+    video.playbackRate = HIGHLIGHT_SLOWMO[clip.type] ? 0.35 : 1;
+    video.currentTime = clip.start / 1000;
+    video.play();
+    video.ontimeupdate = () => {
+      if (HIGHLIGHT_SLOWMO[clip.type] && video.currentTime * 1000 > clip.start + 1000) {
+        video.playbackRate = 1;
+      }
+      if (video.currentTime * 1000 >= clip.end) {
+        highlightQueueIdx++;
+        playNextHighlightClip();
+      }
+    };
+  }
+
+  function startHighlightReel() {
+    if (!lastHighlightResult || !lastHighlightResult.blobUrl || !lastHighlightResult.marks.length) return;
+    highlightQueue = selectHighlightClips(lastHighlightResult.marks);
+    if (!highlightQueue.length) return;
+    highlightQueueIdx = 0;
+    highlightPlaying = true;
+    const video = $('highlight-video');
+    video.src = lastHighlightResult.blobUrl;
+    video.muted = true;
+    $('highlight-panel').classList.remove('hidden');
+    playNextHighlightClip();
+  }
+
+  $('btn-highlight-skip').addEventListener('click', cancelHighlightReel);
+  $('btn-highlight-download').addEventListener('click', () => {
+    if (!lastHighlightResult || !lastHighlightResult.blobUrl) return;
+    const a = document.createElement('a');
+    a.href = lastHighlightResult.blobUrl;
+    a.download = 'alumbs-boxing-highlights.webm';
+    a.click();
+  });
+  ['pointerdown', 'keydown'].forEach(evt => {
+    window.addEventListener(evt, () => {
+      if (highlightPlaying) cancelHighlightReel();
+      else if (highlightIdleAt) highlightIdleAt = null;
+    });
+  });
 
   // ---------------- Main loop ----------------
   function loop(now) {
