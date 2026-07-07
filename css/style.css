@@ -475,6 +475,7 @@ html, body {
 }
 .big-btn.alt { background: #2a3147; }
 .big-btn:active { transform: scale(0.95); }
+.big-btn:disabled { opacity: 0.55; cursor: default; }
 
 /* Controls */
 #controls {

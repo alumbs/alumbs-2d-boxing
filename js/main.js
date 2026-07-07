@@ -403,7 +403,7 @@
     if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
     lastHighlightResult = null;
     $('btn-view-highlights').classList.add('hidden');
-    discardReelCapture();
+    discardReelFile();
   }
 
   function hasHighlights() {
@@ -865,60 +865,154 @@
     return segments.filter(s => keep.has(s)); // back in fight order
   }
 
-  // ---- Reel capture: re-record the reel as it plays so "save highlights"
-  // has a real file to offer (client-side cutting of a webm isn't feasible
-  // without re-encoding; capturing playback is). Only the first complete
-  // playthrough is captured; skipping discards the partial take.
-  let reelRecorder = null;
-  let reelChunks = [];
-  let highlightReelUrl = null;
+  // ---- Saving highlights: cutting a webm client-side isn't feasible
+  // without re-encoding, so SAVE HIGHLIGHTS renders the reel through a
+  // hidden off-screen video in real time and records that. It runs on
+  // demand when the button is clicked, so skipping the visible reel
+  // doesn't matter, and auto-downloads when the render finishes.
+  let reelJob = null;          // { video, recorder, chunks, queue, idx }
+  let highlightReelUrl = null; // finished render, reusable until discarded
   let highlightReelMime = null;
 
-  function beginReelCapture(video) {
-    if (highlightReelUrl || reelRecorder) return; // already have (or making) one
-    const cap = video.captureStream || video.mozCaptureStream;
-    if (!cap || typeof MediaRecorder === 'undefined') return;
-    try {
-      reelChunks = [];
-      reelRecorder = new MediaRecorder(cap.call(video));
-      reelRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) reelChunks.push(e.data); };
-      reelRecorder.start(1000);
-    } catch (e) {
-      reelRecorder = null;
+  function slowWindowsFor(clip) {
+    // Slow-mo brackets the marked moments themselves, not the lead-in.
+    return clip.moments
+      .filter(mo => HIGHLIGHT_SLOWMO[mo.type] && mo.at != null)
+      .map(mo => ({ from: mo.at - 350, to: mo.at + 700 }));
+  }
+
+  function setSaveReelBtn() {
+    const btn = $('btn-highlight-save-reel');
+    btn.classList.toggle('hidden', !hasHighlights() && !highlightReelUrl);
+    btn.disabled = !!reelJob;
+    btn.textContent = reelJob
+      ? `PREPARING… ${Math.min(reelJob.idx + 1, reelJob.queue.length)}/${reelJob.queue.length}`
+      : 'SAVE HIGHLIGHTS';
+  }
+
+  function cancelReelJob() {
+    if (!reelJob) return;
+    const job = reelJob;
+    reelJob = null;
+    job.video.onended = job.video.ontimeupdate = null;
+    job.video.onloadedmetadata = job.video.onseeked = null;
+    job.video.pause();
+    if (job.recorder) {
+      job.recorder.ondataavailable = null;
+      try { job.recorder.stop(); } catch (e) { /* already inactive */ }
     }
+    job.video.remove();
+    setSaveReelBtn();
   }
 
-  function completeReelCapture() {
-    if (!reelRecorder) return;
-    const rec = reelRecorder;
-    reelRecorder = null;
-    rec.onstop = () => {
-      const blob = new Blob(reelChunks, { type: rec.mimeType || 'video/webm' });
-      reelChunks = [];
-      if (blob.size > 0) {
-        highlightReelUrl = URL.createObjectURL(blob);
-        highlightReelMime = rec.mimeType || 'video/webm';
-        $('btn-highlight-save-reel').classList.remove('hidden');
-      }
-    };
-    try { rec.stop(); } catch (e) { reelChunks = []; }
-  }
-
-  function abortReelCapture() {
-    if (!reelRecorder) return;
-    const rec = reelRecorder;
-    reelRecorder = null;
-    rec.ondataavailable = null;
-    try { rec.stop(); } catch (e) { /* already inactive */ }
-    reelChunks = [];
-  }
-
-  function discardReelCapture() {
-    abortReelCapture();
+  function discardReelFile() {
+    cancelReelJob();
     if (highlightReelUrl) URL.revokeObjectURL(highlightReelUrl);
     highlightReelUrl = null;
     highlightReelMime = null;
     $('btn-highlight-save-reel').classList.add('hidden');
+  }
+
+  function startReelJob() {
+    if (reelJob || !hasHighlights()) return;
+    const queue = selectHighlightClips(lastHighlightResult.marks);
+    if (!queue.length) return;
+    const video = document.createElement('video');
+    const cap = video.captureStream || video.mozCaptureStream;
+    if (!cap || typeof MediaRecorder === 'undefined') return;
+    video.muted = true;
+    video.playsInline = true;
+    // Kept in the DOM but parked off-screen; display:none can starve the
+    // decoder in some browsers, off-screen keeps frames flowing.
+    video.style.cssText = 'position:fixed;left:-9999px;top:0;width:4px;height:4px;pointer-events:none;';
+    document.body.appendChild(video);
+    const job = { video, recorder: null, chunks: [], queue, idx: 0 };
+    reelJob = job;
+    video.onloadedmetadata = () => {
+      if (video.duration === Infinity) {
+        // Same Infinity-duration scan hack as the visible reel.
+        video.onseeked = () => {
+          video.onseeked = null;
+          beginReelJobCapture(job, cap);
+        };
+        video.currentTime = 1e10;
+      } else {
+        beginReelJobCapture(job, cap);
+      }
+    };
+    video.src = lastHighlightResult.blobUrl;
+    setSaveReelBtn();
+  }
+
+  function beginReelJobCapture(job, cap) {
+    if (reelJob !== job) return;
+    try {
+      job.recorder = new MediaRecorder(cap.call(job.video));
+    } catch (e) {
+      cancelReelJob();
+      return;
+    }
+    job.recorder.ondataavailable = e => { if (e.data && e.data.size > 0) job.chunks.push(e.data); };
+    job.recorder.start(1000);
+    playReelJobClip(job);
+  }
+
+  function playReelJobClip(job) {
+    if (reelJob !== job) return;
+    const video = job.video;
+    if (job.idx >= job.queue.length) {
+      finishReelJob(job);
+      return;
+    }
+    setSaveReelBtn();
+    const clip = job.queue[job.idx];
+    const slowWindows = slowWindowsFor(clip);
+    video.playbackRate = 1;
+    video.currentTime = clip.start / 1000;
+    video.play();
+    video.ontimeupdate = () => {
+      const t = video.currentTime * 1000;
+      let slow = false;
+      for (const w of slowWindows) {
+        if (t >= w.from && t <= w.to) { slow = true; break; }
+      }
+      video.playbackRate = slow ? 0.35 : 1;
+      if (t >= clip.end) {
+        job.idx++;
+        playReelJobClip(job);
+      }
+    };
+    video.onended = () => {
+      job.idx++;
+      playReelJobClip(job);
+    };
+  }
+
+  function finishReelJob(job) {
+    if (reelJob !== job) return;
+    reelJob = null;
+    job.video.onended = job.video.ontimeupdate = null;
+    job.video.pause();
+    const rec = job.recorder;
+    job.recorder = null;
+    if (!rec) { job.video.remove(); setSaveReelBtn(); return; }
+    rec.onstop = () => {
+      const blob = new Blob(job.chunks, { type: rec.mimeType || 'video/webm' });
+      job.chunks = [];
+      job.video.remove();
+      if (blob.size > 0) {
+        if (highlightReelUrl) URL.revokeObjectURL(highlightReelUrl);
+        highlightReelUrl = URL.createObjectURL(blob);
+        highlightReelMime = rec.mimeType || 'video/webm';
+        // The user asked for this file — hand it over as soon as it's ready.
+        const a = document.createElement('a');
+        a.href = highlightReelUrl;
+        a.download = 'alumbs-boxing-highlights.' + extFor(highlightReelMime);
+        a.click();
+      }
+      setSaveReelBtn();
+    };
+    try { rec.stop(); } catch (e) { job.video.remove(); setSaveReelBtn(); }
   }
 
   function extFor(mime) {
@@ -929,7 +1023,6 @@
     highlightIdleAt = null;
     if (!highlightPlaying) return;
     highlightPlaying = false;
-    abortReelCapture();
     const video = $('highlight-video');
     video.pause();
     video.onended = null;
@@ -941,16 +1034,12 @@
 
   function playNextHighlightClip() {
     if (highlightQueueIdx >= highlightQueue.length) {
-      completeReelCapture();
       cancelHighlightReel();
       return;
     }
     const clip = highlightQueue[highlightQueueIdx];
     const video = $('highlight-video');
-    // Slow-mo brackets the marked moments themselves, not the lead-in.
-    const slowWindows = clip.moments
-      .filter(mo => HIGHLIGHT_SLOWMO[mo.type] && mo.at != null)
-      .map(mo => ({ from: mo.at - 350, to: mo.at + 700 }));
+    const slowWindows = slowWindowsFor(clip);
     video.playbackRate = 1;
     video.currentTime = clip.start / 1000;
     video.play();
@@ -986,16 +1075,15 @@
         // past the end once so the browser computes a real duration.
         video.onseeked = () => {
           video.onseeked = null;
-          beginReelCapture(video);
           playNextHighlightClip();
         };
         video.currentTime = 1e10;
       } else {
-        beginReelCapture(video);
         playNextHighlightClip();
       }
     };
     video.src = lastHighlightResult.blobUrl;
+    setSaveReelBtn();
     $('highlight-panel').classList.remove('hidden');
   }
 
@@ -1021,9 +1109,14 @@
       'alumbs-boxing-fight.' + extFor(lastHighlightResult.mimeType), e.currentTarget);
   });
   $('btn-highlight-save-reel').addEventListener('click', e => {
-    if (!highlightReelUrl) return;
-    downloadUrl(highlightReelUrl,
-      'alumbs-boxing-highlights.' + extFor(highlightReelMime), e.currentTarget);
+    if (highlightReelUrl) {
+      // Already rendered once this match — just hand the file over again.
+      downloadUrl(highlightReelUrl,
+        'alumbs-boxing-highlights.' + extFor(highlightReelMime), e.currentTarget);
+    } else {
+      startReelJob();
+      e.currentTarget.blur();
+    }
   });
   ['pointerdown', 'keydown'].forEach(evt => {
     window.addEventListener(evt, e => {
