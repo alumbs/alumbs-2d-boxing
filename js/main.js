@@ -392,6 +392,11 @@
   function discardHighlights() {
     if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
     lastHighlightResult = null;
+    $('btn-view-highlights').classList.add('hidden');
+  }
+
+  function hasHighlights() {
+    return !!(lastHighlightResult && lastHighlightResult.blobUrl && lastHighlightResult.marks.length);
   }
 
   function startFight() {
@@ -691,7 +696,11 @@
         }
         highlights.mark('finish', 1500, 800);
         setTimeout(() => {
-          highlights.stop().then(res => { lastHighlightResult = res; });
+          highlights.stop().then(res => {
+            lastHighlightResult = res;
+            // Result panel may already be up; reveal the replay button now.
+            $('btn-view-highlights').classList.toggle('hidden', !hasHighlights());
+          });
         }, 1000);
         applyCareerResult(e.result);
         resultShownAt = performance.now() + 1600;
@@ -807,6 +816,7 @@
     $('btn-continue').classList.toggle('hidden', !careerish);
     $('btn-rematch').classList.toggle('hidden', careerish);
     panel.classList.remove('hidden');
+    $('btn-view-highlights').classList.toggle('hidden', !hasHighlights());
     highlightIdleAt = performance.now() + 4000;
   }
 
@@ -884,6 +894,11 @@
     $('highlight-panel').classList.remove('hidden');
   }
 
+  $('btn-view-highlights').addEventListener('click', () => {
+    highlightIdleAt = null;
+    startHighlightReel();
+    $('btn-view-highlights').blur();
+  });
   $('btn-highlight-skip').addEventListener('click', cancelHighlightReel);
   $('btn-highlight-download').addEventListener('click', () => {
     if (!lastHighlightResult || !lastHighlightResult.blobUrl) return;

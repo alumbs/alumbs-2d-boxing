@@ -420,10 +420,12 @@ html, body {
 .rest-tip { font-size: 13px; color: var(--muted); }
 .panel-btns { display: flex; gap: 12px; }
 #highlight-panel video {
-  width: min(480px, 92vw);
-  max-height: 60vh;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   border-radius: 10px;
   background: #000;
+  object-fit: contain;
 }
 
 #count-num {
