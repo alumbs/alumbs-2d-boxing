@@ -23,6 +23,10 @@ class Renderer {
     this.sparks = [];
     this.floats = [];
     this.squash = { p: 0, o: 0 };
+    // Walk-cycle state per fighter: stride phase advances with actual
+    // horizontal travel, amt fades the cycle in/out with speed.
+    this.gait = { p: { prevX: null, phase: 0, amt: 0, s: 1 }, o: { prevX: null, phase: 0, amt: 0, s: 1 } };
+    this.dt = 0;
     this.anchors = { p: { head: { x: 360, y: 246 } }, o: { head: { x: 540, y: 246 } } };
     this.crowd = this.makeCrowd();
     this.vignette = this.makeVignette();
@@ -102,6 +106,7 @@ class Renderer {
 
   draw(game, dt) {
     this.t += dt;
+    this.dt = dt;
     const ctx = this.ctx;
     const w = this.canvas.width, h = this.canvas.height;
     // Uniform scale, letterboxed and centered — never stretch the scene
@@ -363,9 +368,29 @@ class Renderer {
     if (state === 'down' || state === 'ko') downness = Math.min(1, t / 0.35);
     else if (state === 'rising') downness = 1 - Math.min(1, t / 0.7);
 
+    // Walk cycle: stride is keyed to actual horizontal travel, so fighting
+    // footwork, the ringwalk strut, and the neutral-corner reset all read
+    // as steps instead of a glide. Fades out whenever the body stops.
+    const g = this.gait[key] || (this.gait[key] = { prevX: null, phase: 0, amt: 0, s: 1 });
+    if (g.prevX === null || Math.abs(x - g.prevX) > 60) g.prevX = x; // spawn/round-reset teleport, not a step
+    const gdx = x - g.prevX;
+    g.prevX = x;
+    if (gdx !== 0) g.s = gdx > 0 ? 1 : -1;
+    if (this.dt > 0) {
+      g.phase += gdx * 0.05;
+      const speed = Math.abs(gdx) / this.dt;
+      const target = downness > 0 ? 0 : Math.min(1, speed / 70);
+      g.amt += (target - g.amt) * Math.min(1, this.dt * 12);
+    }
+    const stride = 15 * g.amt;
+    const strideS = Math.sin(g.phase);
+    const liftFront = Math.max(0, Math.cos(g.phase) * g.s) * 9 * g.amt;
+    const liftBack = Math.max(0, -Math.cos(g.phase) * g.s) * 9 * g.amt;
+    const gaitBob = Math.abs(strideS) * -2.5 * g.amt; // slight rise mid-stride
+
     // Idle bob + fatigue slump
     const stamFrac = f.stamina / f.maxStamina;
-    const bob = (state === 'idle' || state === 'block') ? Math.sin(this.t * 3.2 + (dir > 0 ? 0 : 1.7)) * 3 : 0;
+    const bob = (state === 'idle' || state === 'block') ? Math.sin(this.t * 3.2 + (dir > 0 ? 0 : 1.7)) * 3 * (1 - g.amt * 0.7) : 0;
     const slump = (1 - stamFrac) * 6;
 
     // Lean (x-offset of upper body). Negative = away from opponent.
@@ -426,9 +451,9 @@ class Renderer {
 
     // Ducking: whole upper body sinks into a crouch
     const duck = f.state === 'block' && f.guardZone === 'duck' ? 1 : 0;
-    const hipY = 372 + bob * 0.4 + slump * 0.5 + duck * 8;
-    const shoY = 288 + bob + slump + duck * 20;
-    const headY = 246 + bob + slump + headDy + duck * 28;
+    const hipY = 372 + bob * 0.4 + gaitBob * 0.4 + slump * 0.5 + duck * 8;
+    const shoY = 288 + bob + gaitBob + slump + duck * 20;
+    const headY = 246 + bob + gaitBob + slump + headDy + duck * 28;
     const headX = x + dir * 8 + lean;
     const shoX = x + lean * 0.7;
 
@@ -436,20 +461,21 @@ class Renderer {
     ctx.strokeStyle = def.skin;
     ctx.lineWidth = 13;
     ctx.lineCap = 'round';
-    const frontFootX = x + dir * 30, backFootX = x - dir * 24;
+    const frontFootX = x + dir * 30 + strideS * stride;
+    const backFootX = x - dir * 24 - strideS * stride;
     ctx.beginPath();
     ctx.moveTo(x + dir * 6, hipY);
-    ctx.quadraticCurveTo(frontFootX - dir * 4, (hipY + FLOOR_Y) / 2 + 6, frontFootX, FLOOR_Y - 8);
+    ctx.quadraticCurveTo(frontFootX - dir * 4, (hipY + FLOOR_Y) / 2 + 6 - liftFront * 0.6, frontFootX, FLOOR_Y - 8 - liftFront);
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(x - dir * 6, hipY);
-    ctx.quadraticCurveTo(backFootX + dir * 2, (hipY + FLOOR_Y) / 2 + 8, backFootX, FLOOR_Y - 8);
+    ctx.quadraticCurveTo(backFootX + dir * 2, (hipY + FLOOR_Y) / 2 + 8 - liftBack * 0.6, backFootX, FLOOR_Y - 8 - liftBack);
     ctx.stroke();
     // Boots
     ctx.fillStyle = '#222';
-    for (const fx of [frontFootX, backFootX]) {
+    for (const [fx, lift] of [[frontFootX, liftFront], [backFootX, liftBack]]) {
       ctx.beginPath();
-      ctx.ellipse(fx + dir * 5, FLOOR_Y - 5, 14, 8, 0, 0, Math.PI * 2);
+      ctx.ellipse(fx + dir * 5, FLOOR_Y - 5 - lift, 14, 8, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
