@@ -96,6 +96,7 @@
   }
 
   function showMenu() {
+    exitFullscreen(); // leaving the fight screen while #stage is fullscreen strands the user
     const c = loadCareer();
     const sum = $('career-summary');
     if (c) {
@@ -493,10 +494,14 @@
   // Fullscreening #stage alone drops the DOM HUD and control clusters from
   // view; the canvas score bug (names, health, stamina, round, clock) carries
   // the fight info. Overlays live inside #stage, so pause/count/rest still show.
+  function exitFullscreen() {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    }
+  }
   $('btn-fullscreen').addEventListener('click', () => {
     const stage = $('stage');
-    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fsEl) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    if (document.fullscreenElement || document.webkitFullscreenElement) exitFullscreen();
     else (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
   });
   for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
@@ -803,6 +808,9 @@
   }
 
   function showResult() {
+    // Back to the page chrome — the result panel's buttons lead out of the
+    // fight screen, and lingering in fullscreen strands the user there.
+    exitFullscreen();
     const r = game.result;
     const panel = $('result-panel');
     let title, sub;
