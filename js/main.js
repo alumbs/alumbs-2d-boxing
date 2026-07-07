@@ -5,6 +5,8 @@
   const audio = new AudioSys();
   const canvas = $('ring');
   const renderer = new Renderer(canvas);
+  const highlights = new HighlightRecorder();
+  let lastHighlightResult = null; // { blobUrl, marks } from the most recently finished match
 
   // Hype announcer lines, picked at random so the arena doesn't repeat
   // itself fight after fight.
@@ -381,9 +383,15 @@
 
   // ---------------- Fight lifecycle ----------------
   function startFight() {
+    if (lastHighlightResult && lastHighlightResult.blobUrl) {
+      URL.revokeObjectURL(lastHighlightResult.blobUrl);
+    }
+    lastHighlightResult = null;
+    highlights.dispose();
     const training = mode === 'training';
     const ceremony = mode === 'career' || mode === 'career-defense';
     game = new Game(playerDef, oppDef, training ? { training: true, spar: 'spar' } : { ceremony });
+    highlights.start(canvas);
     resultShownAt = null;
     resultApplied = false;
     hitstopT = 0;
@@ -421,9 +429,22 @@
   }
 
   $('btn-ready').addEventListener('click', () => { if (game) game.skipRest(); });
-  $('btn-rematch').addEventListener('click', () => { audio.ensure(); startFight(); });
-  $('btn-continue').addEventListener('click', showCareerHub);
-  $('btn-menu').addEventListener('click', showMenu);
+  $('btn-rematch').addEventListener('click', () => {
+    audio.ensure();
+    if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
+    lastHighlightResult = null;
+    startFight();
+  });
+  $('btn-continue').addEventListener('click', () => {
+    if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
+    lastHighlightResult = null;
+    showCareerHub();
+  });
+  $('btn-menu').addEventListener('click', () => {
+    if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
+    lastHighlightResult = null;
+    showMenu();
+  });
 
   // ---------------- Pause ----------------
   // Purely a UI/loop concern — the Game's own state machine (intro/fighting/
@@ -570,6 +591,7 @@
         if (game.training) renderer.addFloat(spot.x + 26, spot.y - 14, e.dmg.toFixed(1), '#c9d4ff', 15);
         hitstopT = Math.max(hitstopT, e.smash || e.counter ? 0.09 : e.dmg >= 3.5 ? 0.06 : 0);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate(25);
+        if (e.smash || e.counter || e.dmg >= 5) highlights.mark('power');
         break;
       }
       case 'blocked': {
@@ -595,18 +617,21 @@
         renderer.addFlash(0.4);
         hitstopT = Math.max(hitstopT, 0.11);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate([40, 30, 40]);
+        highlights.mark('stun');
         break;
       }
       case 'dodged': {
         const a = anchor(e.by);
         audio.whoosh();
         renderer.addFloat(a.head.x, a.head.y - 44, e.kind === 'weave' ? 'WEAVED!' : 'SLIPPED!', '#6de3ff', 20);
+        highlights.mark('dodge');
         break;
       }
       case 'sidestep': {
         const a = anchor(e.by);
         audio.whoosh();
         renderer.addFloat(a.head.x, a.head.y - 44, 'SIDESTEPPED!', '#6de3ff', 20);
+        highlights.mark('dodge');
         break;
       }
       case 'lanestep':
@@ -635,6 +660,7 @@
         hitstopT = Math.max(hitstopT, 0.13);
         banner('KNOCKDOWN!', 'kd', 1.0);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate([60, 40, 60]);
+        highlights.mark('knockdown', 800, 1200);
         break;
       }
       case 'counttick':
@@ -654,6 +680,10 @@
           audio.crowdRoar(1.4);
           audio.hype(e.result.winner === 'p' ? HYPE_KO_WIN : HYPE_KO_LOSE);
         }
+        highlights.mark('finish', 1500, 800);
+        setTimeout(() => {
+          highlights.stop().then(res => { lastHighlightResult = res; });
+        }, 1000);
         applyCareerResult(e.result);
         resultShownAt = performance.now() + 1600;
         break;
