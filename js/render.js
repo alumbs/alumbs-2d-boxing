@@ -192,6 +192,34 @@ class Renderer {
 
     this.drawForeground(ctx);
 
+    // Ring-walk ceremony: house lights down, spotlight on whoever's being introduced
+    if (game && game.state === 'ringwalk' && game.walk) {
+      const focus = game.walk.phase === 'opp' ? game.o : game.walk.phase === 'player' ? game.p : null;
+      if (focus) {
+        // Darkness with a soft transparent well around the featured fighter
+        const g = ctx.createRadialGradient(focus.x, 330, 45, focus.x, 330, 185);
+        g.addColorStop(0, 'rgba(4,6,14,0)');
+        g.addColorStop(1, 'rgba(4,6,14,0.68)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-300, -300, CW + 600, CH + 600);
+        // Warm light cone from the rig
+        ctx.save();
+        ctx.globalAlpha = 0.14;
+        ctx.fillStyle = '#ffe9b0';
+        ctx.beginPath();
+        ctx.moveTo(focus.x - 24, 30);
+        ctx.lineTo(focus.x + 24, 30);
+        ctx.lineTo(focus.x + 92, 462);
+        ctx.lineTo(focus.x - 92, 462);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = 'rgba(4,6,14,0.68)';
+        ctx.fillRect(-300, -300, CW + 600, CH + 600);
+      }
+    }
+
     ctx.restore(); // camera
 
     // Vignette + knockdown flash sit outside the camera so they hug the frame

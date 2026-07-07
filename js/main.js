@@ -382,7 +382,8 @@
   // ---------------- Fight lifecycle ----------------
   function startFight() {
     const training = mode === 'training';
-    game = new Game(playerDef, oppDef, training ? { training: true, spar: 'spar' } : {});
+    const ceremony = mode === 'career' || mode === 'career-defense';
+    game = new Game(playerDef, oppDef, training ? { training: true, spar: 'spar' } : { ceremony });
     resultShownAt = null;
     resultApplied = false;
     hitstopT = 0;
@@ -442,7 +443,11 @@
   $('btn-resume').addEventListener('click', () => setPaused(false));
   $('btn-pause-menu').addEventListener('click', () => { paused = false; showMenu(); });
   window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' && !paused && game && game.state === 'ringwalk') { game.skipCeremony(); return; }
     if (e.key === 'Escape' && game && game.state !== 'over') setPaused(!paused);
+  });
+  canvas.addEventListener('pointerdown', () => {
+    if (!paused && game && game.state === 'ringwalk') game.skipCeremony();
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && game && game.state !== 'over') setPaused(true);
@@ -466,6 +471,32 @@
   });
   $('tb-exit').addEventListener('click', showMenu);
 
+  // ---------------- Ring announcer ----------------
+  const STYLE_CALLS = {
+    slugger: 'the devastating slugger',
+    'out-boxer': 'the silky smooth out-boxer',
+    pressure: 'the relentless pressure fighter',
+    counter: 'the ice-cold counter-puncher',
+  };
+
+  // Roster opponents don't track real records, so synthesize a believable one
+  // from roster rank (the list runs weakest → strongest) — stable per fighter.
+  function synthRecord(def) {
+    const i = Math.max(0, FIGHTERS.findIndex(f => f.id === def.id));
+    const w = 8 + i * 2 + (def.id.length % 3);
+    const l = Math.max(1, 11 - i);
+    const ko = Math.round(w * (0.35 + (def.power || 5) * 0.05));
+    return { w, l, ko };
+  }
+
+  function introCall(def, corner, rec, champ) {
+    const losses = `${rec.l} ${rec.l === 1 ? 'loss' : 'losses'}`;
+    const title = champ ? ' the defending, undisputed champion of the world...' : '';
+    return `Introducing, in the ${corner} corner... with a record of ${rec.w} wins, ${losses}, ` +
+      `with ${rec.ko} coming by way of knockout...${title} ${STYLE_CALLS[def.style] || 'the dangerous contender'}... ` +
+      `${def.nick}!... ${def.name}!`;
+  }
+
   // ---------------- Corner advice ----------------
   function cornerAdvice() {
     const p = game.p, o = game.o;
@@ -485,6 +516,31 @@
 
   function handleEvent(e) {
     switch (e.type) {
+      case 'ringwalk': {
+        if (e.phase === 'open') {
+          banner('FIGHT NIGHT', 'round', 2.0);
+          audio.say('Ladies and gentlemen!... It is fight time!');
+          audio.excite(0.3);
+        } else if (e.phase === 'opp') {
+          banner(`${oppDef.flag || ''} ${oppDef.name.toUpperCase()}`.trim(), 'round', 4.5);
+          audio.say(introCall(oppDef, 'red', synthRecord(oppDef), false));
+          audio.excite(0.35);
+          audio.crowdRoar(0.5);
+        } else if (e.phase === 'player') {
+          const c = loadCareer();
+          const rec = c ? { w: c.w, l: c.l, ko: c.ko } : synthRecord(playerDef);
+          banner(`${playerDef.flag || ''} ${playerDef.nick.toUpperCase()}`.trim(), 'fight', 4.5);
+          audio.say(introCall(playerDef, 'blue', rec, mode === 'career-defense'));
+          audio.excite(0.5);
+          audio.crowdRoar(0.8);
+        }
+        break;
+      }
+      case 'ringwalkskip':
+        if (window.speechSynthesis) speechSynthesis.cancel();
+        bannerQueue = [];
+        bannerUntil = 0;
+        break;
       case 'roundstart':
         if (game.training) { banner('GYM SESSION', 'round', 1.2); audio.say('Time to work'); }
         else { banner(`ROUND ${e.round}`, 'round', 1.2); audio.say(`Round ${e.round}`); }

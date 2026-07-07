@@ -37,6 +37,12 @@ const CLINCH_REGEN_MUL = 2.4;   // stamina regen multiplier while tied up (both 
 const CLINCH_BREAK_GAP = 165;   // the ref separates them to roughly this distance
 const CLINCH_PUSH = 300;        // px/s shove speed during the ref break
 
+// Ring-walk ceremony (big fights only): each fighter walks to his corner
+// under the announcer's introduction before the opening bell.
+const RINGWALK_OPEN = 2.6;      // seconds of "ladies and gentlemen" before the walks
+const RINGWALK_PHASE = 6.5;     // seconds per fighter introduction (fits the spoken call)
+const RINGWALK_SPEED = 45;      // walk-in px/s — a slow, confident strut
+
 // What each evade beats. Lean pulls the head back and out of range;
 // weave rolls under — but ducking into an uppercut is a disaster.
 const DODGE_EVADES = {
@@ -169,16 +175,18 @@ function punchDurations(f, pdef, gassed, countering) {
 }
 
 class Game {
-  // opts: { training: bool, spar: 'dummy' | 'defend' | 'spar' }
+  // opts: { training: bool, spar: 'dummy' | 'defend' | 'spar', ceremony: bool }
   constructor(playerDef, oppDef, opts = {}) {
     this.training = !!opts.training;
     this.spar = opts.spar || 'spar';
+    this.ceremony = !!opts.ceremony && !this.training;
     this.p = makeFighter(playerDef, false, START_P_X, 1);
     this.o = makeFighter(oppDef, true, START_O_X, -1);
     this.round = 1;
     this.clock = ROUND_SECONDS;
-    this.state = 'intro';   // intro | fighting | count | rest | over
+    this.state = 'intro';   // ringwalk | intro | fighting | count | rest | over
     this.stateT = 0;
+    this.walk = null;       // { phase: 'open' | 'opp' | 'player', t }
     this.events = [];
     this.cards = [[], [], []]; // per judge, per round: [pPts, oPts]
     this.count = null;         // { downed, standing, num, t, riseMeter, riseTarget, aiRiseAt }
@@ -187,7 +195,32 @@ class Game {
     this.laneBuffer = null;    // queued lane step { d, ttl }
     this.clinch = null;        // { t, by, breaking }
     this.o.ai.cd = 0.9 + Math.random() * 0.5; // no cheap shots right at the bell
-    this.events.push({ type: 'roundstart', round: 1 });
+    if (this.ceremony) {
+      // Both fighters start at the ring edges and walk in during their intros
+      this.state = 'ringwalk';
+      this.walk = { phase: 'open', t: 0 };
+      this.p.x = RING_LEFT + 15;
+      this.o.x = RING_RIGHT - 15;
+      this.events.push({ type: 'ringwalk', phase: 'open' });
+    } else {
+      this.events.push({ type: 'roundstart', round: 1 });
+    }
+  }
+
+  // Ceremony over (or skipped): snap to fighting positions and start round 1
+  endCeremony() {
+    this.walk = null;
+    this.p.x = START_P_X;
+    this.o.x = START_O_X;
+    this.state = 'intro';
+    this.stateT = 0;
+    this.emit({ type: 'roundstart', round: 1 });
+  }
+
+  skipCeremony() {
+    if (this.state !== 'ringwalk') return;
+    this.emit({ type: 'ringwalkskip' });
+    this.endCeremony();
   }
 
   emit(e) { this.events.push(e); }
@@ -676,6 +709,23 @@ class Game {
   update(dt) {
     this.stateT += dt;
     switch (this.state) {
+      case 'ringwalk': {
+        const w = this.walk;
+        if (!w) { this.endCeremony(); break; }
+        w.t += dt;
+        this.updateFighterPassive(this.p, dt);
+        this.updateFighterPassive(this.o, dt);
+        if (w.phase === 'open') {
+          if (w.t >= RINGWALK_OPEN) { w.phase = 'opp'; w.t = 0; this.emit({ type: 'ringwalk', phase: 'opp' }); }
+        } else if (w.phase === 'opp') {
+          this.o.x = Math.max(START_O_X, this.o.x - RINGWALK_SPEED * dt);
+          if (w.t >= RINGWALK_PHASE) { w.phase = 'player'; w.t = 0; this.emit({ type: 'ringwalk', phase: 'player' }); }
+        } else if (w.phase === 'player') {
+          this.p.x = Math.min(START_P_X, this.p.x + RINGWALK_SPEED * dt);
+          if (w.t >= RINGWALK_PHASE) this.endCeremony();
+        }
+        break;
+      }
       case 'intro':
         this.updateFighterPassive(this.p, dt);
         this.updateFighterPassive(this.o, dt);
@@ -795,7 +845,9 @@ class Game {
           this.emit({ type: 'guardbreak', target: f });
         }
       } else {
-        f.stamina = Math.min(f.maxStamina, f.stamina + regenBase * 0.35 * dt);
+        // The AI recovers a touch slower behind its guard than the player —
+        // it times its blocks perfectly, so it pays a little extra for turtling
+        f.stamina = Math.min(f.maxStamina, f.stamina + regenBase * (f.isAI ? 0.22 : 0.35) * dt);
       }
     }
 
