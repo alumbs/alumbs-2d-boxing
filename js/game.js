@@ -26,6 +26,17 @@ const DUCK_DRAIN = 9;           // stamina per second while covering up
 const COUNT_TICK = 0.85;        // real seconds per count number
 const STUN_CD = 6;              // seconds before the same fighter can be dazed again
 
+// Clinch: a hurt or gassed AI grabs hold when crowded. Both fighters lock up
+// and catch their breath, then the ref shoves them apart — so corner-spamming
+// a gassed opponent's guard is no longer a free win.
+const CLINCH_RANGE = 95;        // max distance to grab an idle opponent
+const CLINCH_GRAB_RANGE = 155;  // max distance to smother an opponent recovering from a punch
+const CLINCH_DUR = 2.0;         // seconds tied up before the ref steps in
+const CLINCH_COOLDOWN = 12;     // seconds before the same fighter can clinch again
+const CLINCH_REGEN_MUL = 2.4;   // stamina regen multiplier while tied up (both fighters)
+const CLINCH_BREAK_GAP = 165;   // the ref separates them to roughly this distance
+const CLINCH_PUSH = 300;        // px/s shove speed during the ref break
+
 // What each evade beats. Lean pulls the head back and out of range;
 // weave rolls under — but ducking into an uppercut is a disaster.
 const DODGE_EVADES = {
@@ -57,24 +68,52 @@ const LANE_STAM = 2;
 const LANE_INPUT_BUFFER = 0.35; // seconds a queued lane step stays alive
 const SEPARATION_SPEED = 260; // px/s to shove overlapping fighters apart
 
+// AI behavior per style. `gassed` is the survival plan when stamina runs dry —
+// each style fails differently, so no single player strategy beats them all:
+//   bombs:  go for broke with desperate heavy shots
+//   circle: get on your bike — retreat and switch lanes, never shell up
+//   press:  keep walking forward and punching through the pain
+//   shell:  block smart and look for the clinch early
+// `tiredFloor` is how much aggression survives at empty stamina,
+// `clinchAt` the stamina fraction below which the fighter starts grabbing.
 const AI_STYLES = {
   slugger: {
     agg: 0.65, blockPref: 0.75, react: 0.0, prefGap: 115,
+    gassed: 'bombs', tiredFloor: 0.45, clinchAt: 0.18,
     combos: [['cross'], ['hook'], ['jab', 'cross'], ['cross', 'hook'], ['uppercut'], ['body', 'hook'], ['jab', 'uppercut']],
   },
   'out-boxer': {
     agg: 0.55, blockPref: 0.45, react: 0.08, prefGap: 150,
+    gassed: 'circle', tiredFloor: 0.35, clinchAt: 0.12, intercept: true,
     combos: [['jab'], ['jab'], ['jab', 'jab'], ['jab', 'cross'], ['jab', 'jab', 'cross']],
   },
   pressure: {
     agg: 0.8, blockPref: 0.7, react: 0.0, prefGap: 105,
+    gassed: 'press', tiredFloor: 0.6, clinchAt: 0.1,
     combos: [['jab', 'cross', 'hook'], ['cross', 'cross'], ['body', 'body'], ['jab', 'body'], ['hook', 'hook'], ['jab', 'cross']],
   },
   counter: {
-    agg: 0.4, blockPref: 0.4, react: 0.18, prefGap: 148,
+    agg: 0.32, blockPref: 0.4, react: 0.2, prefGap: 148,
+    gassed: 'shell', tiredFloor: 0.35, clinchAt: 0.35,
     combos: [['cross'], ['jab', 'cross'], ['cross', 'hook'], ['jab']],
   },
 };
+
+// Passive style traits — these apply to ANY fighter with the style, the
+// player's included, so your pick matters mechanically too:
+//   slugger:   heavy hands + iron chin. Hits harder, batters guards, and is
+//              harder to guard-break or daze.
+//   out-boxer: slick feet. Lane steps recover faster and cost less wind.
+//   pressure:  relentless motor. Punches burn less stamina.
+//   counter:   sharpshooter. Earned counter windows stay open longer.
+const STYLE_TRAITS = {
+  slugger:     { dmgMul: 1.1, guardDrainMul: 1.5, breakResist: 0.5, stunThresh: 1.5 },
+  'out-boxer': { laneCdMul: 0.5, laneStamMul: 0.5 },
+  pressure:    { stamCostMul: 0.8 },
+  counter:     { counterWindowMul: 1.35 },
+};
+
+function traits(f) { return STYLE_TRAITS[f.def.style] || {}; }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
@@ -88,7 +127,7 @@ function makeFighter(def, isAI, x, dir) {
     moveDir: 0,           // absolute: +1 right, -1 left, 0 still
     health: 100, maxHealth: 100,
     stamina: 100, maxStamina: 100,
-    state: 'idle',        // idle | punch | block | dodge | hit | down | rising | victory | ko
+    state: 'idle',        // idle | punch | block | dodge | hit | clinch | down | rising | victory | ko
     stateT: 0,
     punch: null,          // { type, def, dur:{windup,active,total}, resolved, gassed }
     blockHeld: false,
@@ -97,6 +136,7 @@ function makeFighter(def, isAI, x, dir) {
     stunCd: 0,
     stunDur: 0,
     dodgeCd: 0,
+    clinchCd: 0,
     counterWindow: 0,
     graceT: 0,            // invulnerability after rising
     knockdownsRound: 0,
@@ -145,6 +185,7 @@ class Game {
     this.result = null;        // { method, winner: 'p'|'o'|'draw', round, totals }
     this.buffer = null;        // queued player input { kind, type?, ttl }
     this.laneBuffer = null;    // queued lane step { d, ttl }
+    this.clinch = null;        // { t, by, breaking }
     this.o.ai.cd = 0.9 + Math.random() * 0.5; // no cheap shots right at the bell
     this.events.push({ type: 'roundstart', round: 1 });
   }
@@ -197,8 +238,8 @@ class Game {
     const nl = clamp(f.lane + d, 0, LANES - 1);
     if (nl === f.lane) return;
     f.lane = nl;
-    f.laneCd = LANE_STEP_DUR + LANE_COOLDOWN;
-    f.stamina = Math.max(0, f.stamina - LANE_STAM);
+    f.laneCd = LANE_STEP_DUR + LANE_COOLDOWN * (traits(f).laneCdMul || 1);
+    f.stamina = Math.max(0, f.stamina - LANE_STAM * (traits(f).laneStamMul || 1));
     this.emit({ type: 'lanestep', by: f });
   }
   drainLaneBuffer(dt) {
@@ -237,9 +278,10 @@ class Game {
   throwPunch(f, type) {
     if (f.state !== 'idle' && f.state !== 'block') return;
     const pdef = PUNCHES[type];
-    const gassed = f.stamina < pdef.stam;
+    const stamCost = pdef.stam * (traits(f).stamCostMul || 1);
+    const gassed = f.stamina < stamCost;
     const countering = f.counterWindow > 0;
-    f.stamina = Math.max(0, f.stamina - pdef.stam);
+    f.stamina = Math.max(0, f.stamina - stamCost);
     f.state = 'punch';
     f.stateT = 0;
     f.punch = { type, def: pdef, dur: punchDurations(f, pdef, gassed, countering), resolved: false, gassed, countering };
@@ -255,6 +297,52 @@ class Game {
     f.dodgeKind = kind;
     f.dodgeCd = DODGE_DUR + DODGE_COOLDOWN;
     f.stamina = Math.max(0, f.stamina - DODGE_STAM);
+  }
+
+  // A desperate fighter wraps up the opponent. Both lock until the ref breaks
+  // it — no punches, no movement, boosted stamina regen for both sides.
+  startClinch(f, opp) {
+    f.clinchCd = CLINCH_COOLDOWN + Math.random() * 4;
+    this.clinch = { t: 0, by: f, breaking: false };
+    this.buffer = null;
+    this.laneBuffer = null;
+    for (const g of [f, opp]) {
+      g.state = 'clinch'; g.stateT = 0;
+      g.punch = null; g.moveDir = 0; g.counterWindow = 0;
+    }
+    this.emit({ type: 'clinch', by: f });
+  }
+
+  updateClinch(dt) {
+    const c = this.clinch, p = this.p, o = this.o;
+    c.t += dt;
+    if (!c.breaking) {
+      // Tied up: both fighters catch their breath
+      for (const f of [p, o]) {
+        const regen = (4.5 + f.def.stamina * 0.55) * CLINCH_REGEN_MUL;
+        f.stamina = Math.min(f.maxStamina, f.stamina + regen * dt);
+      }
+      // Lean into each other
+      const dx = o.x - p.x, s = Math.sign(dx) || 1;
+      if (Math.abs(dx) > 60) {
+        const pull = Math.min((Math.abs(dx) - 60) / 2, 80 * dt);
+        p.x += s * pull; o.x -= s * pull;
+      }
+      if (c.t >= CLINCH_DUR) c.breaking = true;
+    } else {
+      // Ref break: shove them apart until they're at range again
+      const s = Math.sign(o.x - p.x) || 1;
+      const push = CLINCH_PUSH * dt;
+      p.x = clamp(p.x - s * push, RING_LEFT, RING_RIGHT);
+      o.x = clamp(o.x + s * push, RING_LEFT, RING_RIGHT);
+      if (Math.abs(o.x - p.x) >= CLINCH_BREAK_GAP || c.t >= CLINCH_DUR + 1) {
+        this.clinch = null;
+        for (const f of [p, o]) {
+          if (f.state === 'clinch') { f.state = 'idle'; f.stateT = 0; }
+        }
+        this.emit({ type: 'clinchbreak' });
+      }
+    }
   }
 
   stun(f) {
@@ -316,7 +404,7 @@ class Game {
     // side-step earns a counter window, just like a clean slip.
     if (!this.laneAligned(attacker, target)) {
       if (Math.abs(target.laneF - target.lane) > 0.05 || target.laneCd > 0) {
-        target.counterWindow = COUNTER_WINDOW;
+        target.counterWindow = COUNTER_WINDOW * (traits(target).counterWindowMul || 1);
         punch.dur.total += pdef.recover * 0.5;
         attacker.stamina = Math.max(0, attacker.stamina - 3);
         this.emit({ type: 'sidestep', by: target, attacker });
@@ -330,7 +418,7 @@ class Game {
 
     // Damage
     const isBody = pdef.target === 'body';
-    let dmg = pdef.dmg * (0.6 + attacker.def.power * 0.08);
+    let dmg = pdef.dmg * (0.6 + attacker.def.power * 0.08) * (traits(attacker).dmgMul || 1);
     dmg *= 0.75 + 0.5 * Math.random();
     if (punch.gassed) dmg *= 0.5;
     let counter = false;
@@ -343,7 +431,7 @@ class Game {
         target.stateT >= DODGE_INVULN_FROM && target.stateT <= DODGE_INVULN_TO) {
       const kind = target.dodgeKind || 'lean';
       if (DODGE_EVADES[kind][punch.type]) {
-        target.counterWindow = COUNTER_WINDOW;
+        target.counterWindow = COUNTER_WINDOW * (traits(target).counterWindowMul || 1);
         punch.dur.total += pdef.recover * 0.5; // whiff punishment
         attacker.stamina = Math.max(0, attacker.stamina - 3);
         this.emit({ type: 'dodged', by: target, attacker, kind });
@@ -364,8 +452,10 @@ class Game {
       } else {
         const through = GUARD_THROUGH[zone][isBody ? 'body' : 'head'];
         const solid = through <= 0.3; // the guard truly caught it
-        const broke = solid && zone === 'high' && pdef.guardBreak && Math.random() < pdef.guardBreak;
-        target.stamina = Math.max(0, target.stamina - dmg * (solid ? 1.2 : 0.5) - (zone === 'duck' ? 2 : 0));
+        const broke = solid && zone === 'high' && pdef.guardBreak &&
+          Math.random() < pdef.guardBreak * (traits(target).breakResist || 1);
+        const drainMul = traits(attacker).guardDrainMul || 1;
+        target.stamina = Math.max(0, target.stamina - dmg * (solid ? 1.2 : 0.5) * drainMul - (zone === 'duck' ? 2 : 0));
         if (solid && !broke && target.stamina > 0) {
           const chip = dmg * through;
           target.health = Math.max(0, target.health - chip);
@@ -406,8 +496,9 @@ class Game {
 
     // Dazed? Big counters, duck-smashes, and clean shots on a gassed
     // fighter leave them wobbling — open season until they recover.
+    const stunDmg = 3 * (traits(target).stunThresh || 1); // iron-chinned styles shrug off borderline dazes
     if (target.state !== 'stun' && target.stunCd <= 0 && !isBody &&
-        ((counter && dmg >= 3) || smash || (target.stamina <= 10 && dmg >= 3))) {
+        ((counter && dmg >= stunDmg) || smash || (target.stamina <= 10 && dmg >= stunDmg))) {
       this.stun(target);
       return;
     }
@@ -479,6 +570,7 @@ class Game {
     this.state = 'over';
     this.stateT = 0;
     this.count = null;
+    this.clinch = null;
     const totals = this.cardTotals();
     this.result = { method, winner, round: this.round, totals };
     const w = winner === 'p' ? this.p : winner === 'o' ? this.o : null;
@@ -531,6 +623,7 @@ class Game {
     }
     this.buffer = null;
     this.laneBuffer = null;
+    this.clinch = null;
     this.state = 'rest';
     this.stateT = 0;
   }
@@ -562,7 +655,7 @@ class Game {
       f.stamina = f.maxStamina;
       f.state = 'idle'; f.stateT = 0;
       f.punch = null; f.moveDir = 0; f.blockHeld = false;
-      f.counterWindow = 0; f.stunCd = 0; f.dodgeCd = 0; f.laneCd = 0;
+      f.counterWindow = 0; f.stunCd = 0; f.dodgeCd = 0; f.laneCd = 0; f.clinchCd = 0;
       f.knockdownsRound = 0; f.knockdownsTotal = 0;
       f.round = { landed: 0, thrown: 0, dmg: 0 };
       f.total = { landed: 0, thrown: 0, dmg: 0 };
@@ -574,6 +667,7 @@ class Game {
     this.buffer = null;
     this.laneBuffer = null;
     this.count = null;
+    this.clinch = null;
     this.state = 'fighting';
     this.stateT = 0;
   }
@@ -589,13 +683,14 @@ class Game {
         break;
       case 'fighting': {
         if (!this.training) this.clock -= dt * CLOCK_SPEED;
+        if (this.clinch) this.updateClinch(dt);
         this.updateFighter(this.p, this.o, dt);
         if (this.state !== 'fighting') break; // knockdown/finish mid-update
         this.drainBuffer(dt);
         this.drainLaneBuffer(dt);
         this.updateFighter(this.o, this.p, dt);
         if (this.state !== 'fighting') break;
-        this.separate(dt);
+        if (!this.clinch) this.separate(dt);
         this.aiUpdate(this.o, this.p, dt);
         if (!this.training && this.clock <= 0) { this.clock = 0; this.endRound(); }
         break;
@@ -664,6 +759,7 @@ class Game {
     if (f.graceT > 0) f.graceT -= dt;
     if (f.counterWindow > 0) f.counterWindow -= dt;
     if (f.stunCd > 0) f.stunCd -= dt;
+    if (f.clinchCd > 0) f.clinchCd -= dt;
     if (f.state === 'rising' && f.stateT > 0.7) { f.state = 'idle'; f.stateT = 0; }
     if (f.state === 'stun' && f.stateT > f.stunDur) { f.state = 'idle'; f.stateT = 0; }
     if (f.state === 'punch' || f.state === 'hit' || f.state === 'dodge') {
@@ -683,6 +779,7 @@ class Game {
     if (f.graceT > 0) f.graceT -= dt;
     if (f.counterWindow > 0) f.counterWindow -= dt;
     if (f.stunCd > 0) f.stunCd -= dt;
+    if (f.clinchCd > 0) f.clinchCd -= dt;
 
     // Stamina regen (ducking actively burns stamina — you can't cover up forever)
     const regenBase = 4.5 + f.def.stamina * 0.55;
@@ -766,10 +863,23 @@ class Game {
 
     // A dummy just stands there and takes it
     if (this.training && this.spar === 'dummy') { f.moveDir = 0; return; }
+    if (this.clinch) return; // tied up — the ref is handling this
 
     const d = this.dist();
     const stamFrac = f.stamina / f.maxStamina;
     const toward = Math.sign(opp.x - f.x) || -f.dir;
+
+    // Desperate tie-up: hurt or gassed and being crowded → grab hold instead
+    // of eating a guard-break loop in the corner. Either the opponent is right
+    // on top of us, or they're recovering from a punch and we smother them.
+    if (f.clinchCd <= 0 && this.laneAligned(f, opp) &&
+        (f.state === 'idle' || f.state === 'block' || f.state === 'hit') &&
+        (stamFrac < style.clinchAt || (f.health < 22 && stamFrac < 0.5))) {
+      const oppRecovering = opp.state === 'punch' && opp.punch && opp.punch.resolved;
+      const crowded = (d < CLINCH_RANGE && opp.state !== 'punch') ||
+                      (d < CLINCH_GRAB_RANGE && oppRecovering);
+      if (crowded && Math.random() < dt * 2.2) { this.startClinch(f, opp); return; }
+    }
 
     // Chase the player's lane (defend-only partners hold their ground more)
     if (f.lane !== opp.lane && ai.laneT <= 0 && f.laneCd <= 0 &&
@@ -850,16 +960,49 @@ class Game {
       return;
     }
 
-    // Gassed: rest behind guard (never duck to rest — it drains)
-    if (stamFrac < 0.25 && Math.random() < 0.7) {
-      f.guardZone = Math.random() < 0.7 ? 'high' : 'low';
-      f.state = 'block'; f.stateT = 0;
-      ai.blockT = 0.5 + Math.random() * 0.6;
-      ai.cd = 0.1;
+    // Gassed: each style survives its empty tank differently, so the endgame
+    // doesn't converge on "turtle in the corner and get broken"
+    if (stamFrac < 0.25) {
+      if (style.gassed === 'bombs' && Math.random() < 0.4) {
+        // Slugger: go for broke — a desperate bomb instead of shelling up
+        const bomb = Math.random() < 0.5 ? 'hook' : 'uppercut';
+        if (d <= PUNCHES[bomb].reach && this.laneAligned(f, opp)) {
+          this.throwPunch(f, bomb);
+          ai.cd = (0.5 + Math.random() * 0.5) * tempo;
+          return;
+        }
+      } else if (style.gassed === 'circle' && Math.random() < 0.75) {
+        // Out-boxer: get on your bike — circle away and recover on the move
+        ai.retreatT = 0.8 + Math.random() * 0.4;
+        if (f.laneCd <= 0 && Math.random() < 0.4) {
+          const dLane = f.lane === 0 ? 1 : f.lane === 2 ? -1 : (Math.random() < 0.5 ? -1 : 1);
+          this.doLaneStep(f, dLane);
+        }
+        ai.cd = 0.3;
+        return;
+      }
+      // Pressure fighters barely rest — they walk through the pain
+      const restChance = style.gassed === 'press' ? 0.25 : 0.7;
+      if (Math.random() < restChance) {
+        f.guardZone = Math.random() < 0.7 ? 'high' : 'low';
+        f.state = 'block'; f.stateT = 0;
+        ai.blockT = 0.5 + Math.random() * 0.6;
+        ai.cd = 0.1;
+        return;
+      }
+    }
+
+    // Out-boxer: stab a jab into an opponent walking in
+    if (style.intercept && opp.moveDir === Math.sign(f.x - opp.x) &&
+        d > 120 && d <= PUNCHES.jab.reach + 15 && this.laneAligned(f, opp) &&
+        stamFrac > 0.2 && Math.random() < dt * 3.5) {
+      this.throwPunch(f, 'jab');
+      ai.cd = 0.35 * tempo;
       return;
     }
 
-    let agg = style.agg * (0.35 + 0.65 * stamFrac);
+    const tiredFloor = style.tiredFloor;
+    let agg = style.agg * (tiredFloor + (1 - tiredFloor) * stamFrac);
     if (opp.state === 'hit' || (opp.state === 'punch' && opp.punch && opp.punch.resolved)) agg *= 1.7;
     if (opp.state === 'block') agg *= 0.55;
     if (opp.state === 'stun') agg = 0.98; // open season

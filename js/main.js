@@ -13,6 +13,7 @@
   const HYPE_DAZED = ['He is hurt bad!', 'He is wobbling!', 'Look at him wobble!'];
   const HYPE_KO_WIN = ['And it is over! What a finish!', 'He is out cold!', 'Lights out! Sensational finish!'];
   const HYPE_KO_LOSE = ['And it is over.', 'He could not survive that.', 'The referee has seen enough.'];
+  const HYPE_CLINCH = ['They tie it up!', 'He grabs hold, buying time!', 'Holding on for dear life!'];
 
   let game = null;
   let mode = 'exhibition';   // 'exhibition' | 'career' | 'training'
@@ -549,6 +550,16 @@
       }
       case 'lanestep':
         audio.whoosh();
+        break;
+      case 'clinch': {
+        const a = anchor(e.by);
+        renderer.addFloat(a.head.x, a.head.y - 44, 'CLINCH!', '#9ecbff', 20);
+        audio.excite(0.2);
+        if (!game.training) audio.hype(HYPE_CLINCH);
+        break;
+      }
+      case 'clinchbreak':
+        audio.say('Break!');
         break;
       case 'miss':
         audio.whoosh();

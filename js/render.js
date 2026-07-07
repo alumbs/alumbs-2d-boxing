@@ -363,6 +363,10 @@ class Renderer {
       headDy = -4 * hp;
     } else if (state === 'punch' && f.punch) {
       lean = 10 * this.punchExt(f);
+    } else if (state === 'clinch') {
+      // Leaning into the tie-up, slowly wrestling for position
+      lean = dir * 12 + Math.sin(this.t * 2.4) * 2;
+      headDy = 5;
     } else if (state === 'victory') {
       headDy = -4 + Math.sin(this.t * 6) * 2;
     }
@@ -639,6 +643,10 @@ class Renderer {
     } else if (downish) {
       lead = { x: x + dir * 40, y: shoY + 40 };
       rear = { x: x - dir * 10, y: shoY + 44 };
+    } else if (f.state === 'clinch') {
+      // Arms wrapped over the opponent's shoulders
+      lead = { x: x + dir * 54, y: shoY - 10 };
+      rear = { x: x + dir * 42, y: shoY + 12 };
     }
 
     // Punch extension overrides one arm
