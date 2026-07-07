@@ -35,15 +35,18 @@
       this._chunks = [];
       this._marks = [];
       this._startTime = performance.now();
-      this._stream = canvas.captureStream(30);
       const mimeType = pickMimeType();
       try {
+        // captureStream can throw SecurityError under some privacy/
+        // fingerprinting protections; treat that like unsupported.
+        this._stream = canvas.captureStream(30);
         this._recorder = mimeType
           ? new MediaRecorder(this._stream, { mimeType })
           : new MediaRecorder(this._stream);
       } catch (err) {
         this.isSupported = false;
         this._recorder = null;
+        this._stream = null;
         return;
       }
       this._recorder.ondataavailable = e => {
@@ -78,11 +81,21 @@
           }
           resolve({ blobUrl: this._blobUrl, marks });
         };
-        recorder.stop();
+        try {
+          recorder.stop();
+        } catch (e) {
+          // Recorder was already inactive (e.g. disposed mid-fight);
+          // onstop will never fire, so resolve with what we have.
+          resolve({ blobUrl: null, marks });
+        }
       });
     }
 
     dispose() {
+      if (this._recorder) {
+        try { this._recorder.stop(); } catch (e) { /* already inactive */ }
+        this._recorder = null;
+      }
       if (this._blobUrl) {
         URL.revokeObjectURL(this._blobUrl);
         this._blobUrl = null;

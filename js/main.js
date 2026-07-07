@@ -65,7 +65,10 @@
   const screens = ['screen-menu', 'screen-career', 'screen-create', 'screen-select', 'screen-fight'];
   function show(id) {
     for (const s of screens) $(s).classList.toggle('hidden', s !== id);
-    if (id !== 'screen-fight') game = null;
+    if (id !== 'screen-fight') {
+      game = null;
+      highlights.dispose(); // covers mid-fight quits (pause menu, training EXIT)
+    }
   }
 
   // ---------------- Banner ----------------
@@ -386,11 +389,13 @@
   }
 
   // ---------------- Fight lifecycle ----------------
-  function startFight() {
-    if (lastHighlightResult && lastHighlightResult.blobUrl) {
-      URL.revokeObjectURL(lastHighlightResult.blobUrl);
-    }
+  function discardHighlights() {
+    if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
     lastHighlightResult = null;
+  }
+
+  function startFight() {
+    discardHighlights();
     highlights.dispose();
     const training = mode === 'training';
     const ceremony = mode === 'career' || mode === 'career-defense';
@@ -438,18 +443,15 @@
   $('btn-ready').addEventListener('click', () => { if (game) game.skipRest(); });
   $('btn-rematch').addEventListener('click', () => {
     audio.ensure();
-    if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
-    lastHighlightResult = null;
+    discardHighlights();
     startFight();
   });
   $('btn-continue').addEventListener('click', () => {
-    if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
-    lastHighlightResult = null;
+    discardHighlights();
     showCareerHub();
   });
   $('btn-menu').addEventListener('click', () => {
-    if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
-    lastHighlightResult = null;
+    discardHighlights();
     showMenu();
   });
 
@@ -889,6 +891,9 @@
     a.href = lastHighlightResult.blobUrl;
     a.download = 'alumbs-boxing-highlights.webm';
     a.click();
+    // Drop focus so subsequent keydowns aren't swallowed by the
+    // panel-button exemption in the global cancel listener below.
+    $('btn-highlight-download').blur();
   });
   ['pointerdown', 'keydown'].forEach(evt => {
     window.addEventListener(evt, e => {
