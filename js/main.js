@@ -269,25 +269,35 @@
     box.innerHTML = rows.join('');
   }
 
+  // Raising a stat gets pricier the higher it already is, so skill points
+  // stay meaningful across the whole 42-fight ladder instead of maxing the
+  // build a handful of wins in.
+  function statUpgradeCost(v) {
+    return Math.max(1, v - 2); // 3→4 costs 1 … 9→10 costs 7
+  }
+
   function renderSkillPoints(c) {
     const box = $('career-sp');
     if (!c.sp || c.sp <= 0) { box.classList.add('hidden'); return; }
     box.classList.remove('hidden');
-    box.innerHTML = `<div class="sp-title">SKILL POINTS: ${c.sp} — SPEND THEM</div>`;
+    const anyAffordable = CF_STATS.some(([k]) => c.fighter[k] < 10 && c.sp >= statUpgradeCost(c.fighter[k]));
+    box.innerHTML = `<div class="sp-title">SKILL POINTS: ${c.sp} — ${anyAffordable ? 'SPEND THEM' : 'SAVING UP…'}</div>`;
     for (const [key, label] of CF_STATS) {
       const v = c.fighter[key];
+      const cost = statUpgradeCost(v);
+      const affordable = v < 10 && c.sp >= cost;
       const row = document.createElement('div');
       row.className = 'cf-stat';
       row.innerHTML = `
         <span class="cf-label">${label}</span>
         <span class="cf-val">${v}</span>
-        <button ${v >= 10 ? 'disabled' : ''}>+</button>
+        <button ${affordable ? '' : 'disabled'}>${v >= 10 ? 'MAX' : `+ (${cost})`}</button>
         <div class="stat-bar"><div style="width:${v * 10}%"></div></div>`;
       row.querySelector('button').addEventListener('click', () => {
         const cc = loadCareer();
-        if (!cc || cc.sp <= 0 || cc.fighter[key] >= 10) return;
+        if (!cc || cc.fighter[key] >= 10 || cc.sp < statUpgradeCost(cc.fighter[key])) return;
+        cc.sp -= statUpgradeCost(cc.fighter[key]);
         cc.fighter[key]++;
-        cc.sp--;
         saveCareer(cc);
         showCareerHub();
       });
