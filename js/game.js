@@ -38,9 +38,12 @@ const CLINCH_BREAK_GAP = 165;   // the ref separates them to roughly this distan
 const CLINCH_PUSH = 300;        // px/s shove speed during the ref break
 
 // Ring-walk ceremony (big fights only): each fighter walks to his corner
-// under the announcer's introduction before the opening bell.
-const RINGWALK_OPEN = 2.6;      // seconds of "ladies and gentlemen" before the walks
-const RINGWALK_PHASE = 6.5;     // seconds per fighter introduction (fits the spoken call)
+// under the announcer's introduction before the opening bell. Phases are
+// speech-driven: the UI calls walkSpeechDone() when the announcer finishes a
+// line, and the phase advances at that point (bounded by MIN so the walk
+// itself always plays out, and MAX in case speech never reports back).
+const RINGWALK_MIN = { open: 2.4, opp: 4.5, player: 4.5 };
+const RINGWALK_MAX = { open: 6, opp: 15, player: 15 };
 const RINGWALK_SPEED = 45;      // walk-in px/s — a slow, confident strut
 
 // What each evade beats. Lean pulls the head back and out of range;
@@ -198,7 +201,7 @@ class Game {
     if (this.ceremony) {
       // Both fighters start at the ring edges and walk in during their intros
       this.state = 'ringwalk';
-      this.walk = { phase: 'open', t: 0 };
+      this.walk = { phase: 'open', t: 0, spoken: false };
       this.p.x = RING_LEFT + 15;
       this.o.x = RING_RIGHT - 15;
       this.events.push({ type: 'ringwalk', phase: 'open' });
@@ -221,6 +224,11 @@ class Game {
     if (this.state !== 'ringwalk') return;
     this.emit({ type: 'ringwalkskip' });
     this.endCeremony();
+  }
+
+  // The announcer finished the current phase's line — let the phase advance
+  walkSpeechDone() {
+    if (this.state === 'ringwalk' && this.walk) this.walk.spoken = true;
   }
 
   emit(e) { this.events.push(e); }
@@ -715,14 +723,13 @@ class Game {
         w.t += dt;
         this.updateFighterPassive(this.p, dt);
         this.updateFighterPassive(this.o, dt);
-        if (w.phase === 'open') {
-          if (w.t >= RINGWALK_OPEN) { w.phase = 'opp'; w.t = 0; this.emit({ type: 'ringwalk', phase: 'opp' }); }
-        } else if (w.phase === 'opp') {
-          this.o.x = Math.max(START_O_X, this.o.x - RINGWALK_SPEED * dt);
-          if (w.t >= RINGWALK_PHASE) { w.phase = 'player'; w.t = 0; this.emit({ type: 'ringwalk', phase: 'player' }); }
-        } else if (w.phase === 'player') {
-          this.p.x = Math.min(START_P_X, this.p.x + RINGWALK_SPEED * dt);
-          if (w.t >= RINGWALK_PHASE) this.endCeremony();
+        if (w.phase === 'opp') this.o.x = Math.max(START_O_X, this.o.x - RINGWALK_SPEED * dt);
+        else if (w.phase === 'player') this.p.x = Math.min(START_P_X, this.p.x + RINGWALK_SPEED * dt);
+        const phaseDone = (w.spoken && w.t >= RINGWALK_MIN[w.phase]) || w.t >= RINGWALK_MAX[w.phase];
+        if (phaseDone) {
+          if (w.phase === 'open') { w.phase = 'opp'; w.t = 0; w.spoken = false; this.emit({ type: 'ringwalk', phase: 'opp' }); }
+          else if (w.phase === 'opp') { w.phase = 'player'; w.t = 0; w.spoken = false; this.emit({ type: 'ringwalk', phase: 'player' }); }
+          else this.endCeremony();
         }
         break;
       }

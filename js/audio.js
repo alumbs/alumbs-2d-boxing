@@ -92,10 +92,15 @@ class AudioSys {
     return v;
   }
 
-  // Corner man / announcer via speech synthesis (best-effort, silent if unsupported)
-  say(text) {
+  // Corner man / announcer via speech synthesis (best-effort, silent if
+  // unsupported). onend, if given, fires once when the line finishes — and
+  // also when speech is unavailable, cancelled, or errors, so sequencing
+  // built on it never stalls.
+  say(text, onend) {
+    let called = false;
+    const fire = () => { if (!called && onend) { called = true; onend(); } };
     try {
-      if (!window.speechSynthesis) return;
+      if (!window.speechSynthesis) { setTimeout(fire, 400); return; }
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       const voice = this.announcerVoice();
@@ -105,8 +110,10 @@ class AudioSys {
       u.rate = 0.95;
       u.pitch = 0.55;
       u.volume = 1;
+      u.onend = fire;
+      u.onerror = fire;
       speechSynthesis.speak(u);
-    } catch (e) { /* no speech, no problem */ }
+    } catch (e) { setTimeout(fire, 400); }
   }
 
   now() { return this.ctx ? this.ctx.currentTime : 0; }

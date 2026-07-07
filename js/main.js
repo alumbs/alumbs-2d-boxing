@@ -518,21 +518,23 @@
   function handleEvent(e) {
     switch (e.type) {
       case 'ringwalk': {
+        // A beat of crowd noise after each line lands, then let the phase advance
+        const spoken = () => setTimeout(() => { if (game) game.walkSpeechDone(); }, 700);
         if (e.phase === 'open') {
           $('btn-skip-intro').classList.remove('hidden');
           banner('FIGHT NIGHT', 'round', 2.0);
-          audio.say('Ladies and gentlemen!... It is fight time!');
+          audio.say('Ladies and gentlemen!... It is fight time!', spoken);
           audio.excite(0.3);
         } else if (e.phase === 'opp') {
           banner(`${oppDef.flag || ''} ${oppDef.name.toUpperCase()}`.trim(), 'round', 4.5);
-          audio.say(introCall(oppDef, 'red', synthRecord(oppDef), false));
+          audio.say(introCall(oppDef, 'red', synthRecord(oppDef), false), spoken);
           audio.excite(0.35);
           audio.crowdRoar(0.5);
         } else if (e.phase === 'player') {
           const c = loadCareer();
           const rec = c ? { w: c.w, l: c.l, ko: c.ko } : synthRecord(playerDef);
           banner(`${playerDef.flag || ''} ${playerDef.nick.toUpperCase()}`.trim(), 'fight', 4.5);
-          audio.say(introCall(playerDef, 'blue', rec, mode === 'career-defense'));
+          audio.say(introCall(playerDef, 'blue', rec, mode === 'career-defense'), spoken);
           audio.excite(0.5);
           audio.crowdRoar(0.8);
         }
