@@ -60,12 +60,14 @@
       const t = performance.now() - this._startTime;
       const start = Math.max(0, t - (padStartMs == null ? 400 : padStartMs));
       const end = t + (padEndMs == null ? 800 : padEndMs);
-      this._marks.push({ type, start, end });
+      // `at` is the moment itself, so playback can slow down around the
+      // event rather than the start of the padded window.
+      this._marks.push({ type, start, end, at: t });
     }
 
     stop() {
       if (!this.isSupported || !this._recorder) {
-        return Promise.resolve({ blobUrl: null, marks: [] });
+        return Promise.resolve({ blobUrl: null, mimeType: null, marks: [] });
       }
       const recorder = this._recorder;
       const marks = this._marks.slice();
@@ -79,7 +81,7 @@
             this._stream.getTracks().forEach(tr => tr.stop());
             this._stream = null;
           }
-          resolve({ blobUrl: this._blobUrl, marks });
+          resolve({ blobUrl: this._blobUrl, mimeType: recorder.mimeType || 'video/webm', marks });
         };
         try {
           recorder.stop();
@@ -90,7 +92,7 @@
             this._stream.getTracks().forEach(tr => tr.stop());
             this._stream = null;
           }
-          resolve({ blobUrl: null, marks });
+          resolve({ blobUrl: null, mimeType: null, marks });
         }
       });
     }

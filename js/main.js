@@ -393,6 +393,7 @@
     if (lastHighlightResult && lastHighlightResult.blobUrl) URL.revokeObjectURL(lastHighlightResult.blobUrl);
     lastHighlightResult = null;
     $('btn-view-highlights').classList.add('hidden');
+    discardReelCapture();
   }
 
   function hasHighlights() {
@@ -605,7 +606,7 @@
         if (game.training) renderer.addFloat(spot.x + 26, spot.y - 14, e.dmg.toFixed(1), '#c9d4ff', 15);
         hitstopT = Math.max(hitstopT, e.smash || e.counter ? 0.09 : e.dmg >= 3.5 ? 0.06 : 0);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate(25);
-        if (e.smash || e.counter || e.dmg >= 5) highlights.mark('power');
+        if (e.smash || e.counter || e.dmg >= 5) highlights.mark('power', 3000, 1000);
         break;
       }
       case 'blocked': {
@@ -631,21 +632,21 @@
         renderer.addFlash(0.4);
         hitstopT = Math.max(hitstopT, 0.11);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate([40, 30, 40]);
-        highlights.mark('stun');
+        highlights.mark('stun', 3000, 1000);
         break;
       }
       case 'dodged': {
         const a = anchor(e.by);
         audio.whoosh();
         renderer.addFloat(a.head.x, a.head.y - 44, e.kind === 'weave' ? 'WEAVED!' : 'SLIPPED!', '#6de3ff', 20);
-        highlights.mark('dodge');
+        highlights.mark('dodge', 3000, 800);
         break;
       }
       case 'sidestep': {
         const a = anchor(e.by);
         audio.whoosh();
         renderer.addFloat(a.head.x, a.head.y - 44, 'SIDESTEPPED!', '#6de3ff', 20);
-        highlights.mark('dodge');
+        highlights.mark('dodge', 3000, 800);
         break;
       }
       case 'lanestep':
@@ -674,7 +675,7 @@
         hitstopT = Math.max(hitstopT, 0.13);
         banner('KNOCKDOWN!', 'kd', 1.0);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate([60, 40, 60]);
-        highlights.mark('knockdown', 800, 1200);
+        highlights.mark('knockdown', 3000, 1500);
         break;
       }
       case 'counttick':
@@ -694,7 +695,7 @@
           audio.crowdRoar(1.4);
           audio.hype(e.result.winner === 'p' ? HYPE_KO_WIN : HYPE_KO_LOSE);
         }
-        highlights.mark('finish', 1500, 800);
+        highlights.mark('finish', 3000, 800);
         setTimeout(() => {
           highlights.stop().then(res => {
             lastHighlightResult = res;
@@ -822,19 +823,103 @@
 
   const HIGHLIGHT_PRIORITY = { finish: 0, knockdown: 1, stun: 2, power: 3, dodge: 4 };
   const HIGHLIGHT_SLOWMO = { knockdown: true, finish: true, dodge: true };
+  const HIGHLIGHT_MERGE_GAP = 1000;   // windows closer than this collapse into one cut
+  const HIGHLIGHT_MAX_MS = 30000;     // total reel budget
 
   function selectHighlightClips(marks) {
-    const finishes = marks.filter(m => m.type === 'finish');
-    const rest = marks.filter(m => m.type !== 'finish')
-      .sort((a, b) => HIGHLIGHT_PRIORITY[a.type] - HIGHLIGHT_PRIORITY[b.type] || b.start - a.start)
-      .slice(0, 5);
-    return finishes.concat(rest);
+    // Merge overlapping/near-adjacent windows chronologically so back-to-back
+    // action plays as one continuous cut instead of overlapping replays.
+    const sorted = marks.slice().sort((a, b) => a.start - b.start);
+    const segments = [];
+    for (const m of sorted) {
+      const last = segments[segments.length - 1];
+      if (last && m.start - last.end <= HIGHLIGHT_MERGE_GAP) {
+        last.end = Math.max(last.end, m.end);
+        last.moments.push({ at: m.at, type: m.type });
+      } else {
+        segments.push({ start: m.start, end: m.end, moments: [{ at: m.at, type: m.type }] });
+      }
+    }
+    // Keep the reel under budget, dropping the least important segments first.
+    // The finish segment has top priority so it always survives.
+    const score = s => Math.min(...s.moments.map(mo => HIGHLIGHT_PRIORITY[mo.type]));
+    const byPriority = segments.slice().sort((a, b) => score(a) - score(b));
+    let total = 0;
+    const keep = new Set();
+    for (const s of byPriority) {
+      const len = s.end - s.start;
+      if (total + len > HIGHLIGHT_MAX_MS && keep.size) continue;
+      total += len;
+      keep.add(s);
+    }
+    return segments.filter(s => keep.has(s)); // back in fight order
+  }
+
+  // ---- Reel capture: re-record the reel as it plays so "save highlights"
+  // has a real file to offer (client-side cutting of a webm isn't feasible
+  // without re-encoding; capturing playback is). Only the first complete
+  // playthrough is captured; skipping discards the partial take.
+  let reelRecorder = null;
+  let reelChunks = [];
+  let highlightReelUrl = null;
+  let highlightReelMime = null;
+
+  function beginReelCapture(video) {
+    if (highlightReelUrl || reelRecorder) return; // already have (or making) one
+    const cap = video.captureStream || video.mozCaptureStream;
+    if (!cap || typeof MediaRecorder === 'undefined') return;
+    try {
+      reelChunks = [];
+      reelRecorder = new MediaRecorder(cap.call(video));
+      reelRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) reelChunks.push(e.data); };
+      reelRecorder.start(1000);
+    } catch (e) {
+      reelRecorder = null;
+    }
+  }
+
+  function completeReelCapture() {
+    if (!reelRecorder) return;
+    const rec = reelRecorder;
+    reelRecorder = null;
+    rec.onstop = () => {
+      const blob = new Blob(reelChunks, { type: rec.mimeType || 'video/webm' });
+      reelChunks = [];
+      if (blob.size > 0) {
+        highlightReelUrl = URL.createObjectURL(blob);
+        highlightReelMime = rec.mimeType || 'video/webm';
+        $('btn-highlight-save-reel').classList.remove('hidden');
+      }
+    };
+    try { rec.stop(); } catch (e) { reelChunks = []; }
+  }
+
+  function abortReelCapture() {
+    if (!reelRecorder) return;
+    const rec = reelRecorder;
+    reelRecorder = null;
+    rec.ondataavailable = null;
+    try { rec.stop(); } catch (e) { /* already inactive */ }
+    reelChunks = [];
+  }
+
+  function discardReelCapture() {
+    abortReelCapture();
+    if (highlightReelUrl) URL.revokeObjectURL(highlightReelUrl);
+    highlightReelUrl = null;
+    highlightReelMime = null;
+    $('btn-highlight-save-reel').classList.add('hidden');
+  }
+
+  function extFor(mime) {
+    return mime && mime.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
   }
 
   function cancelHighlightReel() {
     highlightIdleAt = null;
     if (!highlightPlaying) return;
     highlightPlaying = false;
+    abortReelCapture();
     const video = $('highlight-video');
     video.pause();
     video.onended = null;
@@ -846,19 +931,27 @@
 
   function playNextHighlightClip() {
     if (highlightQueueIdx >= highlightQueue.length) {
+      completeReelCapture();
       cancelHighlightReel();
       return;
     }
     const clip = highlightQueue[highlightQueueIdx];
     const video = $('highlight-video');
-    video.playbackRate = HIGHLIGHT_SLOWMO[clip.type] ? 0.35 : 1;
+    // Slow-mo brackets the marked moments themselves, not the lead-in.
+    const slowWindows = clip.moments
+      .filter(mo => HIGHLIGHT_SLOWMO[mo.type] && mo.at != null)
+      .map(mo => ({ from: mo.at - 350, to: mo.at + 700 }));
+    video.playbackRate = 1;
     video.currentTime = clip.start / 1000;
     video.play();
     video.ontimeupdate = () => {
-      if (HIGHLIGHT_SLOWMO[clip.type] && video.currentTime * 1000 > clip.start + 1000) {
-        video.playbackRate = 1;
+      const t = video.currentTime * 1000;
+      let slow = false;
+      for (const w of slowWindows) {
+        if (t >= w.from && t <= w.to) { slow = true; break; }
       }
-      if (video.currentTime * 1000 >= clip.end) {
+      video.playbackRate = slow ? 0.35 : 1;
+      if (t >= clip.end) {
         highlightQueueIdx++;
         playNextHighlightClip();
       }
@@ -883,15 +976,27 @@
         // past the end once so the browser computes a real duration.
         video.onseeked = () => {
           video.onseeked = null;
+          beginReelCapture(video);
           playNextHighlightClip();
         };
         video.currentTime = 1e10;
       } else {
+        beginReelCapture(video);
         playNextHighlightClip();
       }
     };
     video.src = lastHighlightResult.blobUrl;
     $('highlight-panel').classList.remove('hidden');
+  }
+
+  function downloadUrl(url, filename, btn) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    // Drop focus so subsequent keydowns aren't swallowed by the
+    // panel-button exemption in the global cancel listener below.
+    btn.blur();
   }
 
   $('btn-view-highlights').addEventListener('click', () => {
@@ -900,15 +1005,15 @@
     $('btn-view-highlights').blur();
   });
   $('btn-highlight-skip').addEventListener('click', cancelHighlightReel);
-  $('btn-highlight-download').addEventListener('click', () => {
+  $('btn-highlight-download').addEventListener('click', e => {
     if (!lastHighlightResult || !lastHighlightResult.blobUrl) return;
-    const a = document.createElement('a');
-    a.href = lastHighlightResult.blobUrl;
-    a.download = 'alumbs-boxing-highlights.webm';
-    a.click();
-    // Drop focus so subsequent keydowns aren't swallowed by the
-    // panel-button exemption in the global cancel listener below.
-    $('btn-highlight-download').blur();
+    downloadUrl(lastHighlightResult.blobUrl,
+      'alumbs-boxing-fight.' + extFor(lastHighlightResult.mimeType), e.currentTarget);
+  });
+  $('btn-highlight-save-reel').addEventListener('click', e => {
+    if (!highlightReelUrl) return;
+    downloadUrl(highlightReelUrl,
+      'alumbs-boxing-highlights.' + extFor(highlightReelMime), e.currentTarget);
   });
   ['pointerdown', 'keydown'].forEach(evt => {
     window.addEventListener(evt, e => {
