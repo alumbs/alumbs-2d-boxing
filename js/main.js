@@ -209,13 +209,15 @@
     const box = $('career-opponent');
     if (c.stage >= opps.length) {
       $('career-next-label').textContent = '';
-      box.innerHTML = `<div class="champion-banner">🏆 UNDISPUTED CHAMPION 🏆<br><small>Every fighter in the rankings is beaten.</small></div>`;
+      box.innerHTML = `<div class="champion-banner">🏆 UNDISPUTED CHAMPION 🏆<br><small>Pick any challenger and defend your title.</small></div>`;
       $('btn-career-fight').classList.add('hidden');
+      $('btn-career-defend').classList.remove('hidden');
     } else {
       const next = opps[c.stage];
       $('career-next-label').textContent = `NEXT OPPONENT — RANKED #${opps.length - c.stage}`;
       box.innerHTML = fighterCardHTML(next);
       $('btn-career-fight').classList.remove('hidden');
+      $('btn-career-defend').classList.add('hidden');
     }
     renderSkillPoints(c);
     renderRankings(c);
@@ -286,6 +288,15 @@
     mode = 'career';
     startFight();
   });
+  $('btn-career-defend').addEventListener('click', () => {
+    audio.ensure();
+    const c = loadCareer();
+    if (!c) { showMenu(); return; }
+    playerDef = c.fighter;
+    $('select-title').textContent = 'CHOOSE A CHALLENGER';
+    renderGrid('champ');
+    show('screen-select');
+  });
   $('btn-career-menu').addEventListener('click', showMenu);
   $('btn-career-reset').addEventListener('click', () => {
     clearCareer();
@@ -345,6 +356,10 @@
           oppDef = def;
           mode = 'training';
           startFight();
+        } else if (phase === 'champ') {
+          oppDef = def;
+          mode = 'career-defense';
+          startFight();
         } else {
           oppDef = def;
           mode = 'exhibition';
@@ -378,7 +393,7 @@
   }
 
   function applyCareerResult(r) {
-    if (mode !== 'career' || resultApplied) return;
+    if ((mode !== 'career' && mode !== 'career-defense') || resultApplied) return;
     resultApplied = true;
     const c = loadCareer();
     if (!c) return;
@@ -386,7 +401,7 @@
       c.w++;
       const ko = r.method === 'KO' || r.method === 'TKO';
       if (ko) c.ko++;
-      c.stage++;
+      if (mode === 'career') c.stage++;   // title defenses never advance the belt
       c.sp = (c.sp || 0) + 2 + (ko ? 1 : 0); // win bonus, extra for a stoppage
     } else if (r.winner === 'o') {
       c.l++;
@@ -650,8 +665,9 @@
     $('result-stats').innerHTML = `
       <div>${game.p.def.nick}: ${game.p.total.landed}/${game.p.total.thrown} landed</div>
       <div>${game.o.def.nick}: ${game.o.total.landed}/${game.o.total.thrown} landed</div>`;
-    $('btn-continue').classList.toggle('hidden', mode !== 'career');
-    $('btn-rematch').classList.toggle('hidden', mode === 'career');
+    const careerish = mode === 'career' || mode === 'career-defense';
+    $('btn-continue').classList.toggle('hidden', !careerish);
+    $('btn-rematch').classList.toggle('hidden', careerish);
     panel.classList.remove('hidden');
   }
 

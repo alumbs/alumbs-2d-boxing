@@ -465,9 +465,9 @@ class Game {
     f.stateT = 0;
     if (this.training) f.health = Math.max(f.health, 60); // gym rules: shake it off
     else f.health = Math.max(f.health, Math.min(40, 12 + f.def.chin * 2.8));
-    // Stamina already climbed through the count (10%/count); a small extra
-    // jolt on top for actually getting back to your feet.
-    f.stamina = Math.min(f.maxStamina, f.stamina + 8);
+    // Stamina barely climbed through the count; a tiny jolt for actually
+    // getting back to your feet — not enough to un-gas you.
+    f.stamina = Math.min(f.maxStamina, f.stamina + 4);
     f.graceT = 1.5;
     this.count = null;
     this.state = 'fighting';
@@ -623,12 +623,13 @@ class Game {
             return;
           }
         }
-        // Resting on the canvas still counts: the downed fighter recovers
-        // 10% of their stamina per count reached (a 6-count → 60% back),
-        // ramping smoothly toward the next tick rather than jumping. Never
-        // drops them below whatever stamina they still had when they fell.
+        // A fighter who was just dropped gets up tired, not refreshed: only a
+        // small trickle of stamina comes back on the canvas — ~2.5% of max per
+        // count, capped at 20% total, ramping smoothly toward the next tick.
+        // Never drops them below whatever stamina they still had when they fell,
+        // so a fighter downed with more wind simply keeps it.
         {
-          const recoveredFrac = (c.num + clamp(c.t / COUNT_TICK, 0, 1)) * 0.1;
+          const recoveredFrac = Math.min((c.num + clamp(c.t / COUNT_TICK, 0, 1)) * 0.025, 0.20);
           const target = Math.max(c.staminaAtDown, c.downed.maxStamina * recoveredFrac);
           c.downed.stamina = Math.min(c.downed.maxStamina, target);
         }
