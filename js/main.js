@@ -488,6 +488,20 @@
     }
   }
   $('btn-pause').addEventListener('click', () => { audio.ensure(); setPaused(!paused); });
+
+  // ---------------- Fullscreen ----------------
+  // Fullscreening #stage alone drops the DOM HUD and control clusters from
+  // view; the canvas score bug (names, health, stamina, round, clock) carries
+  // the fight info. Overlays live inside #stage, so pause/count/rest still show.
+  $('btn-fullscreen').addEventListener('click', () => {
+    const stage = $('stage');
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
+  });
+  for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+    document.addEventListener(ev, () => requestAnimationFrame(() => renderer.resize()));
+  }
   $('btn-resume').addEventListener('click', () => setPaused(false));
   $('btn-pause-menu').addEventListener('click', () => { paused = false; showMenu(); });
   window.addEventListener('keydown', e => {

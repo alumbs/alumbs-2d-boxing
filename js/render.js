@@ -313,7 +313,7 @@ class Renderer {
       const bw = 140;
       const x0 = right ? CW - 14 - bw : 14;
       ctx.fillStyle = 'rgba(8,10,16,0.55)';
-      ctx.fillRect(x0 - 6, 10, bw + 12, 36);
+      ctx.fillRect(x0 - 6, 10, bw + 12, 43);
       ctx.font = "bold 13px 'Arial Black', sans-serif";
       ctx.textAlign = right ? 'right' : 'left';
       ctx.fillStyle = '#eef1fa';
@@ -324,6 +324,12 @@ class Renderer {
       ctx.fillStyle = frac > 0.5 ? '#3ddc6a' : frac > 0.25 ? '#ffce4d' : '#ff4d4d';
       const fw = bw * frac;
       ctx.fillRect(right ? x0 + bw - fw : x0, 32, fw, 7);
+      const sfrac = Math.max(0, f.stamina / f.maxStamina);
+      ctx.fillStyle = '#262c3d';
+      ctx.fillRect(x0, 42, bw, 5);
+      ctx.fillStyle = '#4dc3ff';
+      const sw = bw * sfrac;
+      ctx.fillRect(right ? x0 + bw - sw : x0, 42, sw, 5);
     };
     plate(game.p, false);
     plate(game.o, true);

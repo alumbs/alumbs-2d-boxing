@@ -249,6 +249,15 @@ html, body {
 }
 .pause-btn:active { background: rgba(8, 10, 16, 0.85); }
 
+.fullscreen-btn { right: 48px; font-size: 17px; }
+
+/* Fullscreen: the stage subtree is all that's shown, so the DOM HUD and
+   control buttons drop away — the canvas score bug carries the fight info */
+#stage:fullscreen { background: #0b0d14; }
+#stage:fullscreen #ring { border-radius: 0; }
+#stage:-webkit-full-screen { background: #0b0d14; }
+#stage:-webkit-full-screen #ring { border-radius: 0; }
+
 /* Ring-walk skip: a deliberate button so stray keys can't cut the intros short */
 .skip-btn {
   position: absolute;
