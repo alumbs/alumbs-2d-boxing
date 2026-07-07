@@ -827,6 +827,8 @@
     video.pause();
     video.onended = null;
     video.ontimeupdate = null;
+    video.onloadedmetadata = null;
+    video.onseeked = null;
     $('highlight-panel').classList.add('hidden');
   }
 
@@ -849,6 +851,10 @@
         playNextHighlightClip();
       }
     };
+    video.onended = () => {
+      highlightQueueIdx++;
+      playNextHighlightClip();
+    };
   }
 
   function startHighlightReel() {
@@ -858,10 +864,22 @@
     highlightQueueIdx = 0;
     highlightPlaying = true;
     const video = $('highlight-video');
-    video.src = lastHighlightResult.blobUrl;
     video.muted = true;
+    video.onloadedmetadata = () => {
+      if (video.duration === Infinity) {
+        // MediaRecorder blobs report Infinity until forced to scan; seek far
+        // past the end once so the browser computes a real duration.
+        video.onseeked = () => {
+          video.onseeked = null;
+          playNextHighlightClip();
+        };
+        video.currentTime = 1e10;
+      } else {
+        playNextHighlightClip();
+      }
+    };
+    video.src = lastHighlightResult.blobUrl;
     $('highlight-panel').classList.remove('hidden');
-    playNextHighlightClip();
   }
 
   $('btn-highlight-skip').addEventListener('click', cancelHighlightReel);
@@ -873,7 +891,8 @@
     a.click();
   });
   ['pointerdown', 'keydown'].forEach(evt => {
-    window.addEventListener(evt, () => {
+    window.addEventListener(evt, e => {
+      if (e.target && e.target.closest && e.target.closest('#highlight-panel .panel-btns')) return;
       if (highlightPlaying) cancelHighlightReel();
       else if (highlightIdleAt) highlightIdleAt = null;
     });
