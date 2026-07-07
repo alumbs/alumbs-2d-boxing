@@ -86,6 +86,10 @@
         } catch (e) {
           // Recorder was already inactive (e.g. disposed mid-fight);
           // onstop will never fire, so resolve with what we have.
+          if (this._stream) {
+            this._stream.getTracks().forEach(tr => tr.stop());
+            this._stream = null;
+          }
           resolve({ blobUrl: null, marks });
         }
       });
@@ -93,6 +97,9 @@
 
     dispose() {
       if (this._recorder) {
+        // Detach first so the recorder's final flushed chunk can't land in
+        // the freshly cleared chunk list after we tear down.
+        this._recorder.ondataavailable = null;
         try { this._recorder.stop(); } catch (e) { /* already inactive */ }
         this._recorder = null;
       }
