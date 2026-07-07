@@ -396,6 +396,7 @@
     $('rest-panel').classList.add('hidden');
     $('count-overlay').classList.add('hidden');
     $('pause-overlay').classList.add('hidden');
+    $('btn-skip-intro').classList.add('hidden');
     $('training-bar').classList.toggle('hidden', !training);
     if (training) setSparButtons('spar');
     show('screen-fight');
@@ -443,10 +444,10 @@
   $('btn-resume').addEventListener('click', () => setPaused(false));
   $('btn-pause-menu').addEventListener('click', () => { paused = false; showMenu(); });
   window.addEventListener('keydown', e => {
-    if (e.key !== 'Escape' && !paused && game && game.state === 'ringwalk') { game.skipCeremony(); return; }
+    if (e.key === 'Enter' && !paused && game && game.state === 'ringwalk') { game.skipCeremony(); return; }
     if (e.key === 'Escape' && game && game.state !== 'over') setPaused(!paused);
   });
-  canvas.addEventListener('pointerdown', () => {
+  $('btn-skip-intro').addEventListener('click', () => {
     if (!paused && game && game.state === 'ringwalk') game.skipCeremony();
   });
   document.addEventListener('visibilitychange', () => {
@@ -518,6 +519,7 @@
     switch (e.type) {
       case 'ringwalk': {
         if (e.phase === 'open') {
+          $('btn-skip-intro').classList.remove('hidden');
           banner('FIGHT NIGHT', 'round', 2.0);
           audio.say('Ladies and gentlemen!... It is fight time!');
           audio.excite(0.3);
@@ -542,6 +544,7 @@
         bannerUntil = 0;
         break;
       case 'roundstart':
+        $('btn-skip-intro').classList.add('hidden');
         if (game.training) { banner('GYM SESSION', 'round', 1.2); audio.say('Time to work'); }
         else { banner(`ROUND ${e.round}`, 'round', 1.2); audio.say(`Round ${e.round}`); }
         break;
