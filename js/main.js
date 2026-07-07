@@ -6,6 +6,14 @@
   const canvas = $('ring');
   const renderer = new Renderer(canvas);
 
+  // Hype announcer lines, picked at random so the arena doesn't repeat
+  // itself fight after fight.
+  const HYPE_FIGHT = ['Here we go!', "Let's fight!", 'Get ready to rumble!', 'This is it!'];
+  const HYPE_KNOCKDOWN = ['Down he goes!', 'He is hurt!', 'Knockdown!', 'Oh, what a shot!'];
+  const HYPE_DAZED = ['He is hurt bad!', 'He is wobbling!', 'Look at him wobble!'];
+  const HYPE_KO_WIN = ['And it is over! What a finish!', 'He is out cold!', 'Lights out! Sensational finish!'];
+  const HYPE_KO_LOSE = ['And it is over.', 'He could not survive that.', 'The referee has seen enough.'];
+
   let game = null;
   let mode = 'exhibition';   // 'exhibition' | 'career' | 'training'
   let playerDef = null;
@@ -484,6 +492,7 @@
         banner('FIGHT!', 'fight', 0.8);
         audio.bellRound();
         audio.excite(0.25);
+        if (game.round === 1 && !game.training) audio.hype(HYPE_FIGHT);
         break;
       case 'hit': {
         const a = anchor(e.target);
@@ -518,6 +527,8 @@
         const a = anchor(e.target);
         audio.stunWobble();
         audio.excite(0.5);
+        audio.crowdRoar(0.6);
+        if (!game.training && !isPlayer(e.target)) audio.hype(HYPE_DAZED);
         renderer.addFloat(a.head.x, a.head.y - 46, 'DAZED!', '#ffe14d', 28);
         renderer.addFlash(0.4);
         hitstopT = Math.max(hitstopT, 0.11);
@@ -545,6 +556,8 @@
       case 'knockdown': {
         audio.knockdown();
         audio.excite(0.9);
+        audio.crowdRoar(1);
+        if (!game.training) audio.hype(HYPE_KNOCKDOWN);
         renderer.addFlash(1);
         renderer.shake = 18;
         hitstopT = Math.max(hitstopT, 0.13);
@@ -565,6 +578,10 @@
       case 'over': {
         audio.bellEnd();
         audio.excite(1);
+        if (e.result.method === 'KO' || e.result.method === 'TKO') {
+          audio.crowdRoar(1.4);
+          audio.hype(e.result.winner === 'p' ? HYPE_KO_WIN : HYPE_KO_LOSE);
+        }
         applyCareerResult(e.result);
         resultShownAt = performance.now() + 1600;
         break;
@@ -654,7 +671,11 @@
         title = youWon ? 'YOU WIN!' : 'YOU LOSE';
         sub = `${wDef.name} wins by ${r.method} in round ${r.round}`;
       }
-      audio.say(youWon ? `And the winner: ${wDef.name}!` : `Winner: ${wDef.name}.`);
+      // Stoppages already got a hype call at the moment of the finish
+      // (see the 'over' case in handleEvent) — don't cut it off here.
+      if (r.method !== 'KO' && r.method !== 'TKO') {
+        audio.say(youWon ? `And the winner: ${wDef.name}!` : `Winner: ${wDef.name}.`);
+      }
     }
     $('result-title').textContent = title;
     $('result-title').classList.toggle('win', r.winner === 'p');

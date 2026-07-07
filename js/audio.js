@@ -139,7 +139,36 @@ class AudioSys {
     this.tone(60, 0.4, 0.5, 'sine');
   }
 
-  crowdRoar(dur = 1.2) {
-    this.noise(dur, 500, 0.4, 0.15);
+  // Big swell layered on top of the ambient crowd bed for hype moments
+  // (knockdowns, stoppages, dazed opponents) — richer than the low bed,
+  // with a rising filter sweep so it reads as the crowd popping, not noise.
+  crowdRoar(mag = 1) {
+    if (!this.ctx) return;
+    const t = this.now();
+    const dur = 0.9 + mag * 0.6;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.Q.value = 0.7;
+    filt.frequency.setValueAtTime(300, t);
+    filt.frequency.linearRampToValueAtTime(1100, t + dur * 0.5);
+    filt.frequency.linearRampToValueAtTime(500, t + dur);
+    const g = this.ctx.createGain();
+    const peak = Math.min(0.5, 0.22 * mag);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + dur * 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(filt).connect(g).connect(this.ctx.destination);
+    src.start(t);
+    src.stop(t + dur + 0.05);
+    this.excite(Math.min(1, 0.4 * mag));
+  }
+
+  // Hype announcer lines — picked at random so repeat knockdowns/finishes
+  // don't say the exact same thing every time.
+  hype(lines) {
+    this.say(lines[Math.floor(Math.random() * lines.length)]);
   }
 }

@@ -93,7 +93,8 @@ css/style.css     — all styling (mobile-first, safe-area aware)
 js/fighters.js    — roster + stats (add fighters here)
 js/game.js        — pure simulation: state machines, punch resolution, AI, judging
 js/render.js      — procedural canvas renderer (no image assets)
-js/audio.js       — WebAudio-synthesized bell/thuds/whooshes (no sound assets)
+js/audio.js       — WebAudio-synthesized bell/thuds/whooshes/crowd roars,
+                    plus a speech-synthesis announcer (no sound assets)
 js/input.js       — touch + keyboard bindings
 js/main.js        — screens, HUD, event routing, game loop
 docs/DESIGN.md    — mechanics & architecture doc
