@@ -658,6 +658,7 @@
     } else {
       const wDef = r.winner === 'p' ? game.p.def : game.o.def;
       const youWon = r.winner === 'p';
+      let spokenMethod;
       if (r.method === 'Decision') {
         const totals = r.totals;
         let votes = 0;
@@ -667,15 +668,16 @@
         const kind = votes === 3 ? 'UNANIMOUS' : votes === 2 ? 'MAJORITY' : 'SPLIT';
         title = youWon ? 'YOU WIN!' : 'YOU LOSE';
         sub = `${wDef.name} wins by ${kind} DECISION`;
+        spokenMethod = 'decision';
       } else {
         title = youWon ? 'YOU WIN!' : 'YOU LOSE';
         sub = `${wDef.name} wins by ${r.method} in round ${r.round}`;
+        spokenMethod = 'knockout';
       }
-      // Stoppages already got a hype call at the moment of the finish
-      // (see the 'over' case in handleEvent) — don't cut it off here.
-      if (r.method !== 'KO' && r.method !== 'TKO') {
-        audio.say(youWon ? `And the winner: ${wDef.name}!` : `Winner: ${wDef.name}.`);
-      }
+      // The immediate hype shout already covered the moment of a stoppage
+      // (see the 'over' case in handleEvent); this is the official closing
+      // call, delayed to land after that shout finishes.
+      audio.say(`${wDef.name} wins by ${spokenMethod}!`);
     }
     $('result-title').textContent = title;
     $('result-title').classList.toggle('win', r.winner === 'p');

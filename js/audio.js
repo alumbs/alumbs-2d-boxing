@@ -18,6 +18,13 @@ class AudioSys {
     const data = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
     this.startCrowd();
+    // Voice list loads async on most browsers — kick it off now and cache
+    // the pick as soon as it's ready, so the first announcer line doesn't
+    // fall back to a default voice while the "real" list is still loading.
+    if (window.speechSynthesis) {
+      this.announcerVoice();
+      speechSynthesis.addEventListener('voiceschanged', () => { this._voice = null; this.announcerVoice(); }, { once: true });
+    }
   }
 
   // Continuous crowd bed whose volume follows the fight's excitement
@@ -63,15 +70,41 @@ class AudioSys {
     o.stop(t + 0.6);
   }
 
+  // Pick the deepest, most ring-announcer-like voice the browser/OS ships.
+  // Voice lists load async (and differ wildly per platform), so this is
+  // cached after the first successful lookup and re-tried if the browser
+  // hadn't finished loading voices yet (common on first page load).
+  announcerVoice() {
+    if (this._voice) return this._voice;
+    if (!window.speechSynthesis) return null;
+    const voices = speechSynthesis.getVoices();
+    if (!voices.length) return null; // not loaded yet — caller falls back to default
+    // Preference order: known deep/male "announcer" voices first, then any
+    // English voice with "male" in the name, then any English voice at all.
+    const byName = n => voices.find(v => v.name.includes(n));
+    const preferred = ['Google UK English Male', 'Microsoft Guy', 'Microsoft David', 'Daniel', 'Arthur', 'Oliver'];
+    let v = null;
+    for (const name of preferred) { v = byName(name); if (v) break; }
+    if (!v) v = voices.find(x => /en/i.test(x.lang) && /male/i.test(x.name));
+    if (!v) v = voices.find(x => /en/i.test(x.lang));
+    if (!v) v = voices[0];
+    this._voice = v;
+    return v;
+  }
+
   // Corner man / announcer via speech synthesis (best-effort, silent if unsupported)
   say(text) {
     try {
       if (!window.speechSynthesis) return;
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.05;
-      u.pitch = 0.75;
-      u.volume = 0.9;
+      const voice = this.announcerVoice();
+      if (voice) u.voice = voice;
+      // Deep, punchy ring-announcer cadence: slightly slower and noticeably
+      // lower-pitched than default TTS reads.
+      u.rate = 0.95;
+      u.pitch = 0.55;
+      u.volume = 1;
       speechSynthesis.speak(u);
     } catch (e) { /* no speech, no problem */ }
   }
