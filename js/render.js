@@ -27,6 +27,9 @@ class Renderer {
     // horizontal travel, amt fades the cycle in/out with speed.
     this.gait = { p: { prevX: null, phase: 0, amt: 0, s: 1 }, o: { prevX: null, phase: 0, amt: 0, s: 1 } };
     this.dt = 0;
+    this.blood = [];   // falling droplets
+    this.stains = [];  // dried onto the mat for the rest of the fight
+    this._builds = new WeakMap(); // per-def silhouette variation cache
     this.anchors = { p: { head: { x: 360, y: 246 } }, o: { head: { x: 540, y: 246 } } };
     this.crowd = this.makeCrowd();
     this.vignette = this.makeVignette();
@@ -104,6 +107,37 @@ class Renderer {
 
   addSquash(key, amt = 1) { this.squash[key] = Math.min(1.2, Math.max(this.squash[key], amt)); }
 
+  // A bloodied fighter sheds droplets that fall and soak into the mat.
+  addBlood(x, y, floorY, n = 4) {
+    for (let i = 0; i < n; i++) {
+      this.blood.push({
+        x: x + (Math.random() - 0.5) * 16,
+        y: y + (Math.random() - 0.5) * 8,
+        vx: (Math.random() - 0.5) * 150,
+        vy: -30 - Math.random() * 90,
+        floor: floorY + 2 + Math.random() * 8,
+      });
+    }
+  }
+
+  clearBlood() { this.blood.length = 0; this.stains.length = 0; }
+
+  // Per-fighter silhouette: heavy hitters carry more bulk, speedsters run
+  // lean, with a per-identity nudge so same-stat fighters still differ.
+  buildOf(def) {
+    let b = this._builds.get(def);
+    if (b) return b;
+    const s = String(def.id || def.name || '');
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    const jitter = ((Math.abs(h) % 9) - 4) * 0.012;
+    const w = Math.min(1.18, Math.max(0.86,
+      0.94 + (def.power || 3) * 0.024 - (def.speed || 3) * 0.014 + jitter));
+    b = { w };
+    this._builds.set(def, b);
+    return b;
+  }
+
   draw(game, dt) {
     this.t += dt;
     this.dt = dt;
@@ -147,6 +181,16 @@ class Renderer {
 
     this.drawRing(ctx, dt);
 
+    // Dried blood stains on the mat (under the fighters)
+    for (const st of this.stains) {
+      ctx.globalAlpha = st.a;
+      ctx.fillStyle = '#8e1420';
+      ctx.beginPath();
+      ctx.ellipse(st.x, st.y, st.rx, st.ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
     if (game) {
       // Far lane draws first; within a lane the attacker draws on top
       const order = [['p', game.p, game.o], ['o', game.o, game.p]].sort((a, b) =>
@@ -162,6 +206,26 @@ class Renderer {
           });
         }
       }
+    }
+
+    // Falling blood droplets — land on the mat and become stains
+    for (let i = this.blood.length - 1; i >= 0; i--) {
+      const d = this.blood[i];
+      d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 620 * dt;
+      if (d.y >= d.floor) {
+        this.blood.splice(i, 1);
+        this.stains.push({
+          x: d.x, y: d.floor,
+          rx: 2.5 + Math.random() * 4.5, ry: 1 + Math.random() * 1.6,
+          a: 0.35 + Math.random() * 0.2,
+        });
+        if (this.stains.length > 80) this.stains.shift();
+        continue;
+      }
+      ctx.fillStyle = '#c11f2e';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, 2.4, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // Particles
@@ -235,6 +299,51 @@ class Renderer {
       this.flash = Math.max(0, this.flash - dt * 2.5);
     }
 
+    // Broadcast score bug — baked into the canvas so recordings carry the
+    // names, round, and clock, not just the action.
+    if (game && game.state !== 'ringwalk') this.drawScoreBug(ctx, game);
+
+    ctx.restore();
+  }
+
+  drawScoreBug(ctx, game) {
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    const plate = (f, right) => {
+      const bw = 140;
+      const x0 = right ? CW - 14 - bw : 14;
+      ctx.fillStyle = 'rgba(8,10,16,0.55)';
+      ctx.fillRect(x0 - 6, 10, bw + 12, 36);
+      ctx.font = "bold 13px 'Arial Black', sans-serif";
+      ctx.textAlign = right ? 'right' : 'left';
+      ctx.fillStyle = '#eef1fa';
+      ctx.fillText(f.def.nick.toUpperCase(), right ? x0 + bw : x0, 21);
+      const frac = Math.max(0, f.health / f.maxHealth);
+      ctx.fillStyle = '#262c3d';
+      ctx.fillRect(x0, 32, bw, 7);
+      ctx.fillStyle = frac > 0.5 ? '#3ddc6a' : frac > 0.25 ? '#ffce4d' : '#ff4d4d';
+      const fw = bw * frac;
+      ctx.fillRect(right ? x0 + bw - fw : x0, 32, fw, 7);
+    };
+    plate(game.p, false);
+    plate(game.o, true);
+
+    let label;
+    if (game.training) label = 'SPARRING';
+    else if (game.state === 'rest') label = `END OF ROUND ${game.round}`;
+    else if (game.state === 'count') label = game.count && game.count.num > 0 ? `COUNT: ${game.count.num}` : 'KNOCKDOWN!';
+    else if (game.state === 'over') label = 'FIGHT OVER';
+    else {
+      const t = Math.max(0, Math.ceil(game.clock));
+      label = `ROUND ${game.round} · ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    }
+    ctx.font = "bold 15px 'Arial Black', sans-serif";
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(8,10,16,0.55)';
+    ctx.fillRect(CW / 2 - tw / 2 - 12, 12, tw + 24, 24);
+    ctx.fillStyle = '#ffd27a';
+    ctx.fillText(label, CW / 2, 25);
     ctx.restore();
   }
 
@@ -362,6 +471,7 @@ class Renderer {
     const def = f.def;
     const t = f.stateT;
     const state = f.state;
+    const bw = this.buildOf(def).w; // silhouette width factor
 
     // Downness: 0 standing, 1 flat on the mat
     let downness = 0;
@@ -459,16 +569,16 @@ class Renderer {
 
     // Legs
     ctx.strokeStyle = def.skin;
-    ctx.lineWidth = 13;
+    ctx.lineWidth = 13 * bw;
     ctx.lineCap = 'round';
-    const frontFootX = x + dir * 30 + strideS * stride;
-    const backFootX = x - dir * 24 - strideS * stride;
+    const frontFootX = x + dir * 30 * bw + strideS * stride;
+    const backFootX = x - dir * 24 * bw - strideS * stride;
     ctx.beginPath();
-    ctx.moveTo(x + dir * 6, hipY);
+    ctx.moveTo(x + dir * 6 * bw, hipY);
     ctx.quadraticCurveTo(frontFootX - dir * 4, (hipY + FLOOR_Y) / 2 + 6 - liftFront * 0.6, frontFootX, FLOOR_Y - 8 - liftFront);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x - dir * 6, hipY);
+    ctx.moveTo(x - dir * 6 * bw, hipY);
     ctx.quadraticCurveTo(backFootX + dir * 2, (hipY + FLOOR_Y) / 2 + 8 - liftBack * 0.6, backFootX, FLOOR_Y - 8 - liftBack);
     ctx.stroke();
     // Boots
@@ -482,32 +592,32 @@ class Renderer {
     // Trunks
     ctx.fillStyle = def.trunks;
     ctx.beginPath();
-    ctx.moveTo(x - 20 + lean * 0.3, hipY - 26);
-    ctx.lineTo(x + 20 + lean * 0.3, hipY - 26);
-    ctx.lineTo(x + 24, hipY + 16);
-    ctx.lineTo(x + 6, hipY + 12);
+    ctx.moveTo(x - 20 * bw + lean * 0.3, hipY - 26);
+    ctx.lineTo(x + 20 * bw + lean * 0.3, hipY - 26);
+    ctx.lineTo(x + 24 * bw, hipY + 16);
+    ctx.lineTo(x + 6 * bw, hipY + 12);
     ctx.lineTo(x, hipY - 2);
-    ctx.lineTo(x - 6, hipY + 12);
-    ctx.lineTo(x - 24, hipY + 16);
+    ctx.lineTo(x - 6 * bw, hipY + 12);
+    ctx.lineTo(x - 24 * bw, hipY + 16);
     ctx.closePath();
     ctx.fill();
     // Waistband
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillRect(x - 20 + lean * 0.3, hipY - 28, 40, 5);
+    ctx.fillRect(x - 20 * bw + lean * 0.3, hipY - 28, 40 * bw, 5);
 
     // Torso
     ctx.fillStyle = def.skin;
     ctx.beginPath();
-    ctx.moveTo(x - 19 + lean * 0.3, hipY - 24);
-    ctx.quadraticCurveTo(shoX - 26, (hipY + shoY) / 2, shoX - 23, shoY - 6);
-    ctx.quadraticCurveTo(shoX, shoY - 20, shoX + 23, shoY - 6);
-    ctx.quadraticCurveTo(shoX + 26, (hipY + shoY) / 2, x + 19 + lean * 0.3, hipY - 24);
+    ctx.moveTo(x - 19 * bw + lean * 0.3, hipY - 24);
+    ctx.quadraticCurveTo(shoX - 26 * bw, (hipY + shoY) / 2, shoX - 23 * bw, shoY - 6);
+    ctx.quadraticCurveTo(shoX, shoY - 20, shoX + 23 * bw, shoY - 6);
+    ctx.quadraticCurveTo(shoX + 26 * bw, (hipY + shoY) / 2, x + 19 * bw + lean * 0.3, hipY - 24);
     ctx.closePath();
     ctx.fill();
     // Chest shading
     ctx.fillStyle = 'rgba(0,0,0,0.08)';
     ctx.beginPath();
-    ctx.ellipse(shoX - dir * 8, (hipY + shoY) / 2 - 4, 10, 26, 0, 0, Math.PI * 2);
+    ctx.ellipse(shoX - dir * 8, (hipY + shoY) / 2 - 4, 10 * bw, 26, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Head (squashes on impact)

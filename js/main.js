@@ -437,6 +437,7 @@
     if (training) setSparButtons('spar');
     show('screen-fight');
     renderer.resize();
+    renderer.clearBlood();
   }
 
   function applyCareerResult(r) {
@@ -616,6 +617,10 @@
         if (game.training) renderer.addFloat(spot.x + 26, spot.y - 14, e.dmg.toFixed(1), '#c9d4ff', 15);
         hitstopT = Math.max(hitstopT, e.smash || e.counter ? 0.09 : e.dmg >= 3.5 ? 0.06 : 0);
         if (isPlayer(e.target) && navigator.vibrate) navigator.vibrate(25);
+        // A fighter deep in the red bleeds from clean head shots
+        if (!e.body && e.target.health < 30) {
+          renderer.addBlood(spot.x, spot.y, laneFloorY(e.target.laneF), Math.min(7, 3 + Math.round(e.dmg)));
+        }
         if (e.smash || e.counter || e.dmg >= 5) highlights.mark('power', 3000, 1000);
         break;
       }
