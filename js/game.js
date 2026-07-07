@@ -24,6 +24,8 @@ const COUNTER_WINDUP_MUL = 0.75; // punch snaps out ~25% faster while cashing in
 const INPUT_BUFFER = 0.5;       // seconds a queued input stays alive
 const DUCK_DRAIN = 9;           // stamina per second while covering up
 const COUNT_TICK = 0.85;        // real seconds per count number
+const NEUTRAL_WALK_SPEED = 180; // px/s the scorer walks to the neutral corner during a count
+const NEUTRAL_CORNER_PAD = 40;  // how far off the ropes the neutral corner sits
 const STUN_CD = 6;              // seconds before the same fighter can be dazed again
 
 // Clinch: a hurt or gassed AI grabs hold when crowded. Both fighters lock up
@@ -584,7 +586,11 @@ class Game {
     }
     // Each knockdown (and worse shape) takes more mashing to beat
     const riseTarget = clamp(1 + (target.knockdownsTotal - 1) * 0.35 + Math.max(0, hurt) * 0.25, 1, 2.1);
-    this.count = { downed: target, standing, num: 0, t: 0, riseMeter: 0, riseTarget, aiRiseAt, staminaAtDown: target.stamina };
+    // Referee sends the scorer to the neutral corner on the far side of the
+    // ring from the downed fighter, so the fight resets with real distance.
+    const mid = (RING_LEFT + RING_RIGHT) / 2;
+    const neutralX = target.x >= mid ? RING_LEFT + NEUTRAL_CORNER_PAD : RING_RIGHT - NEUTRAL_CORNER_PAD;
+    this.count = { downed: target, standing, num: 0, t: 0, riseMeter: 0, riseTarget, aiRiseAt, staminaAtDown: target.stamina, neutralX };
     this.emit({ type: 'knockdown', target });
     if (!this.training && target.knockdownsRound >= 3) {
       this.finish('TKO', standing === this.p ? 'p' : 'o');
@@ -764,6 +770,13 @@ class Game {
           const s = c.standing;
           const regenBase = 4.5 + s.def.stamina * 0.55;
           s.stamina = Math.min(s.maxStamina, s.stamina + regenBase * dt);
+          // Walk them to the neutral corner while the count runs, always
+          // facing the downed fighter.
+          const dx = c.neutralX - s.x;
+          if (Math.abs(dx) > 4) {
+            s.x = clamp(s.x + Math.sign(dx) * NEUTRAL_WALK_SPEED * dt, RING_LEFT, RING_RIGHT);
+          }
+          s.dir = s.x < c.downed.x ? 1 : -1;
         }
         while (c.t >= COUNT_TICK) {
           c.t -= COUNT_TICK;
