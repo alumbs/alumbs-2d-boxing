@@ -6,6 +6,7 @@
   const canvas = $('ring');
   const renderer = new Renderer(canvas);
   const highlights = new HighlightRecorder();
+  const sync = new CareerSync();
   let lastHighlightResult = null; // { blobUrl, marks } from the most recently finished match
 
   // Hype announcer lines, picked at random so the arena doesn't repeat
@@ -53,6 +54,10 @@
   }
   function saveCareer(c) {
     try { localStorage.setItem(CAREER_KEY, JSON.stringify(c)); } catch (e) { /* private mode */ }
+    stampLocal();
+    // Local storage is the source of truth; the cloud push is a best-effort
+    // mirror. With no keys stored, push() is a no-op, so the game is unchanged.
+    sync.push(c);
   }
   function clearCareer() {
     try { localStorage.removeItem(CAREER_KEY); } catch (e) { /* ignore */ }
@@ -1184,12 +1189,109 @@
     updateBanner(now);
   }
 
+  // ---------------- Cloud sync UI ----------------
+  // The reconcile step from the backend's own guidance: on load with keys
+  // present, whichever copy (local vs server) is newer wins, so multiple
+  // devices converge. Timestamps come from the blob wrapper's updatedAt; a
+  // local save with no wrapper is treated as oldest so a real server copy
+  // adopts. Returns true if the local career was replaced from the server.
+  async function reconcileCareer() {
+    if (!sync.hasKeys()) return false;
+    const blob = await sync.pull();
+    const serverCareer = blob && blob.career;
+    const local = loadCareer();
+    if (!serverCareer) {
+      // Server empty (or unreachable) — seed it from local if we have one.
+      if (local) sync.push(local);
+      return false;
+    }
+    if (!local) {
+      saveCareer(serverCareer); // saveCareer re-pushes, harmless (same data)
+      return true;
+    }
+    const serverTime = blob.updatedAt || '';
+    const localTime = localUpdatedAt();
+    if (serverTime > localTime) {
+      saveCareer(serverCareer);
+      return true;
+    }
+    sync.push(local); // local is newer/equal — bring the server up to date
+    return false;
+  }
+
+  // We don't stamp the local save with a time, so track the last local write
+  // separately; absent (never written this device) sorts before any server
+  // timestamp, so a fresh device adopts the cloud copy.
+  const LOCAL_TIME_KEY = 'alumbs-career-updated';
+  function localUpdatedAt() {
+    try { return localStorage.getItem(LOCAL_TIME_KEY) || ''; } catch (e) { return ''; }
+  }
+  function stampLocal() {
+    try { localStorage.setItem(LOCAL_TIME_KEY, new Date().toISOString()); } catch (e) { /* ignore */ }
+  }
+
+  function refreshSyncUI() {
+    const link = $('btn-sync');
+    const connected = sync.hasKeys();
+    link.textContent = connected ? '☁ career synced' : '☁ sync career';
+    link.classList.toggle('synced', connected);
+    $('sync-form').classList.toggle('hidden', connected);
+    $('btn-sync-save').classList.toggle('hidden', connected);
+    $('btn-sync-out').classList.toggle('hidden', !connected);
+    const status = $('sync-status');
+    status.className = 'sync-status' + (connected ? ' ok' : '');
+    status.textContent = connected
+      ? 'Connected. Your career syncs to the cloud on every save.'
+      : 'Not connected — your career is saved on this device only.';
+  }
+
+  $('btn-sync').addEventListener('click', () => {
+    $('sync-app-key').value = '';
+    $('sync-write-key').value = '';
+    refreshSyncUI();
+    $('sync-overlay').classList.remove('hidden');
+  });
+  $('btn-sync-close').addEventListener('click', () => $('sync-overlay').classList.add('hidden'));
+  $('btn-sync-out').addEventListener('click', () => {
+    sync.clearKeys();
+    refreshSyncUI();
+    $('sync-overlay').classList.add('hidden');
+  });
+  $('btn-sync-save').addEventListener('click', async () => {
+    const appKey = $('sync-app-key').value.trim();
+    const writeKey = $('sync-write-key').value.trim();
+    const status = $('sync-status');
+    if (!appKey || !writeKey) {
+      status.className = 'sync-status err';
+      status.textContent = 'Enter both keys.';
+      return;
+    }
+    sync.setKeys(appKey, writeKey);
+    status.className = 'sync-status';
+    status.textContent = 'Connecting…';
+    const adopted = await reconcileCareer();
+    refreshSyncUI();
+    if (adopted) {
+      status.className = 'sync-status ok';
+      status.textContent = 'Connected — loaded your cloud career.';
+      showMenu(); // refresh the menu's career summary with the adopted save
+      $('sync-overlay').classList.remove('hidden');
+    }
+  });
+
   // ---------------- Boot ----------------
   bindInput(() => (paused ? null : game), () => audio.ensure());
   if (window.matchMedia('(pointer: fine)').matches) {
     $('key-hint').classList.remove('hidden');
   }
+  refreshSyncUI();
   showMenu();
+  // If keys are already stored (returning on a device you've signed in on, or
+  // a fresh one after pasting keys), pull and reconcile so the newer copy of
+  // the career wins. Best-effort — a failure leaves the local save untouched.
+  if (sync.hasKeys()) {
+    reconcileCareer().then(adopted => { if (adopted) showMenu(); });
+  }
   // Dev shortcut: ?auto[=yourIdx,oppIdx] jumps straight into an exhibition fight
   const auto = new URLSearchParams(location.search).get('auto');
   if (auto !== null) {

@@ -22,6 +22,23 @@
       <button id="btn-exhibition" class="big-btn alt menu-btn">🥊 EXHIBITION</button>
       <button id="btn-training" class="big-btn alt menu-btn">🏋️ TRAINING</button>
     </div>
+    <button id="btn-sync" class="sync-link">☁ sync career</button>
+  </div>
+
+  <!-- ============ CLOUD SYNC ============ -->
+  <div id="sync-overlay" class="overlay panel hidden">
+    <h3>☁ SYNC CAREER</h3>
+    <p id="sync-status" class="sync-status"></p>
+    <div id="sync-form" class="sync-form">
+      <p class="sync-blurb">Paste your keys to carry your career across devices. Leave this alone and the game still works — your career just stays on this device.</p>
+      <div class="create-row"><label for="sync-app-key">APP KEY</label><input id="sync-app-key" placeholder="pub_…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <div class="create-row"><label for="sync-write-key">WRITE KEY</label><input id="sync-write-key" placeholder="wr_…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    </div>
+    <div class="panel-btns">
+      <button id="btn-sync-save" class="big-btn">CONNECT</button>
+      <button id="btn-sync-out" class="big-btn alt hidden">SIGN OUT</button>
+      <button id="btn-sync-close" class="big-btn alt">CLOSE</button>
+    </div>
   </div>
 
   <!-- ============ CREATE A FIGHTER ============ -->
@@ -198,6 +215,7 @@
   <script src="js/audio.js?v=3"></script>
   <script src="js/input.js?v=3"></script>
   <script src="js/highlights.js?v=3"></script>
+  <script src="js/sync.js?v=3"></script>
   <script src="js/main.js?v=3"></script>
 </body>
 </html>
