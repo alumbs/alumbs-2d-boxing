@@ -1196,10 +1196,13 @@
   // local save with no wrapper is treated as oldest so a real server copy
   // adopts. Returns true if the local career was replaced from the server.
   async function reconcileCareer() {
-    if (!sync.hasKeys()) return false;
+    if (!sync.canRead()) return false;
     const blob = await sync.pull();
     const serverCareer = blob && blob.career;
     const local = loadCareer();
+    // push() self-gates on canWrite(), so in a read-only (app-key-only)
+    // session every push below is a harmless no-op — the server is never
+    // touched, but the server's career is still adopted into local play.
     if (!serverCareer) {
       // Server empty (or unreachable) — seed it from local if we have one.
       if (local) sync.push(local);
@@ -1232,17 +1235,20 @@
 
   function refreshSyncUI() {
     const link = $('btn-sync');
-    const connected = sync.hasKeys();
-    link.textContent = connected ? '☁ career synced' : '☁ sync career';
-    link.classList.toggle('synced', connected);
-    $('sync-form').classList.toggle('hidden', connected);
-    $('btn-sync-save').classList.toggle('hidden', connected);
-    $('btn-sync-out').classList.toggle('hidden', !connected);
+    const read = sync.canRead();
+    const write = sync.canWrite();
+    link.textContent = write ? '☁ career synced' : read ? '☁ career (read-only)' : '☁ sync career';
+    link.classList.toggle('synced', read);
+    $('sync-form').classList.toggle('hidden', read);
+    $('btn-sync-save').classList.toggle('hidden', read);
+    $('btn-sync-out').classList.toggle('hidden', !read);
     const status = $('sync-status');
-    status.className = 'sync-status' + (connected ? ' ok' : '');
-    status.textContent = connected
+    status.className = 'sync-status' + (read ? ' ok' : '');
+    status.textContent = write
       ? 'Connected. Your career syncs to the cloud on every save.'
-      : 'Not connected — your career is saved on this device only.';
+      : read
+        ? 'Read-only: loaded the cloud career, but changes stay on this device (no write key).'
+        : 'Not connected — your career is saved on this device only.';
   }
 
   $('btn-sync').addEventListener('click', () => {
@@ -1259,11 +1265,11 @@
   });
   $('btn-sync-save').addEventListener('click', async () => {
     const appKey = $('sync-app-key').value.trim();
-    const writeKey = $('sync-write-key').value.trim();
+    const writeKey = $('sync-write-key').value.trim(); // optional — blank = read-only
     const status = $('sync-status');
-    if (!appKey || !writeKey) {
+    if (!appKey) {
       status.className = 'sync-status err';
-      status.textContent = 'Enter both keys.';
+      status.textContent = 'Enter at least the app key (read). The write key is optional.';
       return;
     }
     sync.setKeys(appKey, writeKey);
@@ -1271,12 +1277,10 @@
     status.textContent = 'Connecting…';
     const adopted = await reconcileCareer();
     refreshSyncUI();
-    if (adopted) {
-      status.className = 'sync-status ok';
-      status.textContent = 'Connected — loaded your cloud career.';
-      showMenu(); // refresh the menu's career summary with the adopted save
-      $('sync-overlay').classList.remove('hidden');
-    }
+    // Keep the panel open so the resulting state (synced vs read-only) is
+    // visible; refreshSyncUI already wrote the matching status line.
+    if (adopted) showMenu(); // refresh the menu's career summary with the adopted save
+    $('sync-overlay').classList.remove('hidden');
   });
 
   // ---------------- Boot ----------------
@@ -1289,7 +1293,7 @@
   // If keys are already stored (returning on a device you've signed in on, or
   // a fresh one after pasting keys), pull and reconcile so the newer copy of
   // the career wins. Best-effort — a failure leaves the local save untouched.
-  if (sync.hasKeys()) {
+  if (sync.canRead()) {
     reconcileCareer().then(adopted => { if (adopted) showMenu(); });
   }
   // Dev shortcut: ?auto[=yourIdx,oppIdx] jumps straight into an exhibition fight

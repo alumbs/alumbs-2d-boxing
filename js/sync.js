@@ -18,12 +18,18 @@ class CareerSync {
 
   appKey() { try { return localStorage.getItem(this.APP_KEY) || ''; } catch (e) { return ''; } }
   writeKey() { try { return localStorage.getItem(this.WRITE_KEY) || ''; } catch (e) { return ''; } }
-  hasKeys() { return !!(this.appKey() && this.writeKey()); }
+  // Read needs only the app_key; write additionally needs the write_key.
+  // Entering just the app_key gives a read-only ("load my career, don't
+  // touch it") session — pull() runs, push() stays a no-op.
+  canRead() { return !!this.appKey(); }
+  canWrite() { return !!(this.appKey() && this.writeKey()); }
 
   setKeys(appKey, writeKey) {
     try {
       localStorage.setItem(this.APP_KEY, appKey.trim());
-      localStorage.setItem(this.WRITE_KEY, writeKey.trim());
+      // Write key is optional — a blank one leaves the session read-only.
+      if (writeKey.trim()) localStorage.setItem(this.WRITE_KEY, writeKey.trim());
+      else localStorage.removeItem(this.WRITE_KEY);
     } catch (e) { /* private mode — sync just won't persist keys */ }
   }
   clearKeys() {
@@ -37,7 +43,7 @@ class CareerSync {
   // or null on any failure (no keys, offline, 403, bad JSON) — callers treat
   // null as "server had nothing usable" and keep the local copy.
   async pull() {
-    if (!this.hasKeys()) return null;
+    if (!this.canRead()) return null;
     try {
       const res = await fetch(`${this.base}/api/data`, {
         headers: { 'X-App-Key': this.appKey() },
@@ -53,7 +59,7 @@ class CareerSync {
   // forget: resolves true on success, false on any failure. A failed push
   // never disturbs the local save — the next successful push catches up.
   async push(career) {
-    if (!this.hasKeys() || !career) return false;
+    if (!this.canWrite() || !career) return false;
     const blob = { career, updatedAt: nowIso() };
     try {
       const res = await fetch(`${this.base}/api/data`, {
